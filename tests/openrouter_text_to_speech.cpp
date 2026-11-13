@@ -10,6 +10,8 @@
 #include "df0.hpp"
 #include <iostream>
 #include <sstream>
+#include <string>
+
 int main(int argc, char* argv[])
 {
   using namespace df0;
@@ -17,8 +19,14 @@ int main(int argc, char* argv[])
 
   try
   {
-    std::filesystem::path("data_processing_definition.mp3") | openai::transcribe(environment::get("OPENAI_API_KEY").value()) | plain_text_exporter() | openai::summarize(environment::get("OPENAI_API_KEY").value(), openai::model::gpt_4o) | out_stream;
-    ensure(fuzzy_match::ratio(out_stream.str(), "Data processing involves converting raw data into meaningful information by collecting, organizing, analyzing, and interpreting it. This process includes tasks like sorting, filtering, summarizing, and transforming data using computational and statistical methods. It is crucial in fields like business, science, and technology, as it helps organizations extract valuable insights from large datasets, make informed decisions, and enhance efficiency.\n")) > 80;
+    const std::string text = "Data processing involves converting raw data into meaningful information.";
+    data_source{text, mime_type{"text/plain"}, confidence::highest} | openrouter::text_to_speech(environment::get("OPENROUTER_API_KEY").value(), "x-ai/grok-voice-tts-1.0", "eve", "mp3") | out_stream;
+    ensure(out_stream.str().size()) > 1000;
+    const std::string audio = out_stream.str();
+    const auto byte_at = [&audio](std::size_t i) { return static_cast<unsigned char>(audio[i]); };
+    const bool has_id3_tag = audio.compare(0, 3, "ID3") == 0;
+    const bool has_mp3_frame_sync = byte_at(0) == 0xFF && (byte_at(1) & 0xE0) == 0xE0;
+    ensure(has_id3_tag || has_mp3_frame_sync) == true;
   }
   catch (const std::exception& e)
   {

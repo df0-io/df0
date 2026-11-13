@@ -110,7 +110,7 @@ Untrusted input is normalized at SDK boundaries. Malformed or encrypted data is 
 
 Features marked **(planned)** are on the public roadmap and may not be fully available in the current release.
 
-- **Local-first and privacy-preserving data processing** - the goal is for every processing stage to support an on-premise implementation. Today, parsing, OCR, local document AI, and local text embeddings can run fully offline. A few AI capabilities, such as image/audio understanding and the largest cloud LLM models, are available only through explicit OpenAI integration. No data is sent to a cloud service unless a cloud transformer is explicitly added to the pipeline. Hybrid privacy workflows, such as local anonymization before optional cloud processing, are planned.
+- **Local-first and privacy-preserving data processing** - the goal is for every processing stage to support an on-premise implementation. Today, parsing, OCR, local document AI, and local text embeddings can run fully offline. A few AI capabilities, such as image/audio understanding and the largest cloud LLM models, are available only through explicit OpenRouter integration. No data is sent to a cloud service unless a cloud transformer is explicitly added to the pipeline. Hybrid privacy workflows, such as local anonymization before optional cloud processing, are planned.
 - Able to extract/import and export **text, images, formatting, and metadata along with annotations**
 - **Handles unstructured and structured payloads**: documents, images, web content, JSON, XML, CSV, and other structured or semi-structured formats can be processed in the same pipeline model.
 - **Data can be transformed** between import and export (filtering, aggregating, translation, text classification, sentiment analysis, named entity recognition etc).
@@ -163,7 +163,7 @@ Additionally, the SDK provides functionality to convert a MIME type back to a fi
 
 - HTTP Server: **Host your own data processing pipelines as HTTP services easily**. The built-in `http::server` allows you to expose any processing pipeline as an HTTP endpoint, enabling you to build powerful microservices for data processing.
 
-- **Integration with OpenAI API for most advanced NLP tasks**, including transformers like:
+- **Integration with OpenRouter API for most advanced NLP tasks**. [OpenRouter](https://openrouter.ai) is a single API that routes requests to hundreds of models across many providers (OpenAI, Anthropic, Google, Meta, Mistral, DeepSeek, and more), so you can switch models by changing a model slug. Transformers include:
     - translate_to: Translate text or image to different languages.
     - summarize: Generate summarized content from longer texts or description of images.
     - extract_entities: Extract entities and key information from text and image.
@@ -172,14 +172,12 @@ Additionally, the SDK provides functionality to convert a MIME type back to a fi
     - detect_sentiment: Analyze and detect sentiment in text and image.
     - analyze_data: Perform data analysis on text content and images.
     - find: Search for phrases, objects or events in text and images (object detection, event detection).
-    - chat: Conduct chat-based interactions and conversations with text input and image input.
+    - task: Conduct chat-based interactions with a custom system prompt and text or image input.
     - text_to_speech: Perform written text into spoken words (voice) conversion (TTS).
     - transcribe: Convert spoken language (voice) into written text (transcription, Automatic Speech Recognition).
-    - embed: Generate embedding of text via OpenAI.
-   
-   OpenAI services support multiple model families, including chat models (GPT-5, GPT-5 mini, GPT-5 nano, GPT-5 Chat Latest, GPT-4.1, GPT-4.1 mini, GPT-4.1 nano, GPT-4o, GPT-4o mini, o3, o3-pro, o3-deep-research, o3-mini, o4-mini, o4-mini-deep-research), transcribe models (gpt-4o-transcribe, gpt-4o-mini-transcribe, whisper-1), TTS models (gpt-4o-mini-tts, tts-1, tts-1-hd), and embedding models (text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002). More are coming.
+    - embed: Generate embedding of text via OpenRouter.
 
-- **OpenRouter support (planned)**: Expanding optional cloud LLM integrations to support a wide range of open and commercial models through OpenRouter. Cloud integrations remain opt-in and do not change the local-first core behavior.
+   Models are selected by OpenRouter slug, for example `openai/gpt-5` or `anthropic/claude-sonnet-5`. The default for chat-based transformers is `openrouter/auto`, which lets OpenRouter choose the model. Built-in transcribe model constants are available in `openrouter::transcribe_model` (`openai/whisper-large-v3`, `openai/whisper-1`, `openai/gpt-4o-transcribe`, `microsoft/mai-transcribe-1.5`, `x-ai/grok-stt-1.0`). Text to speech (`text_to_speech`), transcription (`transcribe`) and embeddings (`embed`) have no router alias like `openrouter/auto`, and the available models and voices change over time, so you must specify the model explicitly (and the voice for text to speech). Current models can be listed with the [OpenRouter models API](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties), for example `https://openrouter.ai/api/v1/models?output_modalities=speech`. Cloud integrations remain opt-in and do not change the local-first core behavior. An API key can be created at https://openrouter.ai/keys.
 - **Incremental parsing** returning data as soon as they are available
 
 - **Structured Content Extraction**: DF-0 excels in transforming unstructured documents into structured content. By breaking down documents into discernible elements such as titles, paragraphs, list items, tables, and metadata, the SDK facilitates a granular level of control over the data extraction process. This feature is particularly beneficial for developers working with NLP and LLM models, as it allows them to selectively retain content that is most relevant to their application. For instance, when training a summarization model, users may opt to focus solely on narrative text, excluding headers, footers, and other non-essential elements. The SDK's structured content extraction capability ensures that the integrity and context of the document are preserved, enabling more accurate and meaningful interactions with AI-driven projects.
@@ -190,7 +188,7 @@ Additionally, the SDK provides functionality to convert a MIME type back to a fi
 
 - **Semantic Chunking (planned)**: Group related content using the SDK's chunking feature to create contextually rich embeddings that capture the nuances of the document's structure.
 
-- **Integration with Embedding Models**: Once the data is preprocessed and structured, you can use [openai::embed](https://docs.df0.io/en/latest/classdf0_1_1openai_1_1embed.html), the local embedding steps `ai::local::ct2::passage::embedder` and `ai::local::ct2::query::embedder`, or integrate with your choice of embedding models, such as word2vec, GloVe, or BERT. Generated embeddings can be used in various NLP tasks.
+- **Integration with Embedding Models**: Once the data is preprocessed and structured, you can use [openrouter::embed](https://docs.df0.io/en/latest/classdf0_1_1openrouter_1_1embed.html), the local embedding steps `ai::local::ct2::passage::embedder` and `ai::local::ct2::query::embedder`, or integrate with your choice of embedding models, such as word2vec, GloVe, or BERT. Generated embeddings can be used in various NLP tasks.
 
 - **Enhancing AI/NLP Pipelines**: Embeddings obtained from DF-0 can be used to enhance AI/NLP pipelines, enabling more accurate and context-aware applications such as document classification, sentiment analysis, and information retrieval.
 
@@ -419,13 +417,13 @@ ensure(out_stream.str()) == "report";
 ```
 [Full example](https://docs.df0.io/en/latest/local_ai_ct2_classify_8cpp-example.html)
 
-Classify file in any format (Office, PDF, mail, etc) to any categories using OpenAI service:
+Classify file in any format (Office, PDF, mail, etc) to any categories using OpenRouter (the OpenRouter examples read the API key from the `OPENROUTER_API_KEY` environment variable):
 
 ```cpp
-std::filesystem::path("...") | ... | openai::classify({ "agreement", "invoice", "report", ...}, ...) | out_stream;
+std::filesystem::path("...") | ... | openrouter::classify({ "agreement", "invoice", "report", ...}, ...) | out_stream;
 ensure(out_stream.str()) == "report\n";
 ```
-[Full example](https://docs.df0.io/en/latest/openai_classify_8cpp-example.html)
+[Full example](https://docs.df0.io/en/latest/openrouter_classify_8cpp-example.html)
 
 Translate document in any format (Office, PDF, mail, etc) to other language using built-in local AI model:
 
@@ -435,13 +433,13 @@ ensure(fuzzy_match::ratio(out_stream.str(), "La procesación de datos se refiere
 ```
 [Full example](https://docs.df0.io/en/latest/local_ai_ct2_translate_8cpp-example.html)
 
-Translate document in any format (Office, PDF, mail, etc) to other language using OpenAI service:
+Translate document in any format (Office, PDF, mail, etc) to other language using OpenRouter:
 
 ```cpp
-std::filesystem::path("...") | ... | openai::translate_to("spanish", ...) | out_stream;
+std::filesystem::path("...") | ... | openrouter::translate_to("spanish", ...) | out_stream;
 ensure(fuzzy_match::ratio(out_stream.str(), "El procesamiento de datos se refiere a las actividades...")) > 80;
 ```
-[Full example](https://docs.df0.io/en/latest/openai_translate_8cpp-example.html)
+[Full example](https://docs.df0.io/en/latest/openrouter_translate_8cpp-example.html)
 
 Detect sentiment of document in any format (Office, PDF, mail, etc) using built-in local AI model:
 
@@ -451,12 +449,12 @@ ensure(out_stream.str()) == "positive";
 ```
 [Full example](https://docs.df0.io/en/latest/local_ai_ct2_sentiment_8cpp-example.html)
 
-Detect sentiment of document in any format (Office, PDF, mail, etc) using OpenAI service:
+Detect sentiment of document in any format (Office, PDF, mail, etc) using OpenRouter:
 
 ```cpp
-std::filesystem::path("1.doc") | ... | openai::detect_sentiment(...) | std::cout;
+std::filesystem::path("1.doc") | ... | openrouter::detect_sentiment(...) | std::cout;
 ```
-[Full example](https://docs.df0.io/en/latest/openai_sentiment_8cpp-example.html)
+[Full example](https://docs.df0.io/en/latest/openrouter_sentiment_8cpp-example.html)
 
 Make a summary of document in any format (Office, PDF, mail, etc) using built-in local AI model:
 
@@ -466,20 +464,21 @@ ensure(fuzzy_match::ratio(out_stream.str(), "Data processing is the collection, 
 ```
 [Full example](https://docs.df0.io/en/latest/local_ai_ct2_summary_8cpp-example.html)
 
-Make a voice summary of document in any format (Office, PDF, mail, etc) in two steps: summarize using GPT model and convert the summary to speech using text to speech model. Result is saved to mp3 file:
+Convert a voice recording (e.g. mp3 file) to text using OpenRouter:
 
 ```cpp
-std::filesystem::path("1.doc") | ... | openai::summarize(...) | openai::text_to_speech(...) | std::ofstream("summary.mp3");
+std::filesystem::path("data_processing_definition.mp3") | openrouter::transcribe(..., "openai/whisper-large-v3") | plain_text_exporter() | out_stream;
+ensure(fuzzy_match::ratio(out_stream.str(), "Data processing involves converting raw data...")) > 50;
 ```
-[Full example](https://docs.df0.io/en/latest/openai_voice_summary_8cpp-example.html)
+[Full example](https://docs.df0.io/en/latest/openrouter_transcribe_8cpp-example.html)
 
-Make a text summary of voice recording (e.g. mp3 file with meeting recording) in two steps: convert voice to text and summarize text using OpenAI services (with non-default model selected):
+Convert text to speech using OpenRouter. The model and voice must be specified (voices are model-specific, see the `supported_voices` field of the OpenRouter models API):
 
 ```cpp
-std::filesystem::path("...mp3") | openai::transcribe(...) | ... | openai::summarize(..., openai::model::gpt_4o) | out_stream;
-ensure(fuzzy_match::ratio(out_stream.str(), "Data processing involves converting raw data...")) > 80;
+data_source{text, mime_type{"text/plain"}, confidence::highest} | openrouter::text_to_speech(..., "x-ai/grok-voice-tts-1.0", "eve", "mp3") | out_stream;
+ensure(out_stream.str().size()) > 1000;
 ```
-[Full example](https://docs.df0.io/en/latest/openai_transcribe_summary_8cpp-example.html)
+[Full example](https://docs.df0.io/en/latest/openrouter_text_to_speech_8cpp-example.html)
 
 Find phrases, objects and events with smart matching in documents in any format (Office, PDF, mail, etc) using built-in local AI model:
 
@@ -489,23 +488,24 @@ ensure(out_stream.str()).is_one_of({ "Data processing refers to the activities p
 ```
 [Full example](https://docs.df0.io/en/latest/local_ai_ct2_find_8cpp-example.html)
 
-Find phrases, objects and events in text or image using GPT model (with non-default model selected):
+Find phrases, objects and events in text or image using OpenRouter:
 
 ```cpp
-std::filesystem::path("scene_1.png") | ... | openai::find("tree", ..., openai::model::gpt_4o) | out_stream;
-ensure(fuzzy_match::ratio(out_stream.str(), "2\n- A tree is located on the left side...")) > 80;
+std::filesystem::path("scene_1.png") | ... | openrouter::find("tree", ...) | out_stream;
+ensure(fuzzy_match::ratio(out_stream.str(), "2\n- A tree is located on the left side...")) > 50;
 ```
-[Full example](https://docs.df0.io/en/latest/openai_find_image_8cpp-example.html)
+[Full example](https://docs.df0.io/en/latest/openrouter_find_image_8cpp-example.html)
 
-Create embedding for document in any format (Office, PDF, mail, etc) using OpenAI service:
+
+Create embedding for document in any format (Office, PDF, mail, etc) using OpenRouter:
 
 ```cpp
-std::filesystem::path("...") | ... | openai::embed(...) | out_msgs;
+std::filesystem::path("data_processing_definition.doc") | ... | openrouter::embed(..., "openai/text-embedding-3-small") | out_msgs;
 ...
 ensure(out_msgs[0]->is<ai::embedding>()) == true;
 ensure(out_msgs[0]->get<ai::embedding>().values.size()) == 1536;
 ```
-[Full example](https://docs.df0.io/en/latest/openai_embedding_8cpp-example.html)
+[Full example](https://docs.df0.io/en/latest/openrouter_embedding_8cpp-example.html)
 
 Create embedding for document in any format (Office, PDF, mail, etc) using built-in local AI model, create embeddings for two queries and calculate similarity:
 
@@ -1059,30 +1059,32 @@ Process data securely using offline AI models with the following options:
 - **&ndash;&ndash;local-ai-embed [passage|query|none]**: generate an embedding of text via a local AI model. `passage` selects passage/document embeddings and `query` selects query embeddings. `none` is accepted and currently uses the same local embedding path as `passage`. If the option is provided without a value, `none` is used, which currently maps to the passage embedder.
 - **&ndash;&ndash;local-ai-model <path>**: path to local AI model data (built-in default model is used if not specified)
 
-### OpenAI Integration
+### OpenRouter Integration
 
-Unlock the power of OpenAI with the following options:
+[OpenRouter](https://openrouter.ai) routes requests to hundreds of models from many providers. Use the following options (an API key can be created at https://openrouter.ai/keys):
 
-- **&ndash;&ndash;openai-chat <prompt>**: Initiate a chat prompt for processing text and images via OpenAI.
-- **&ndash;&ndash;openai-extract-entities**: Extract entities from text and images via OpenAI.
-- **&ndash;&ndash;openai-extract-keywords <N>**: Extract N keywords/key phrases from text and images via OpenAI.
-- **&ndash;&ndash;openai-summarize**: Summarize text and images via OpenAI.
-- **&ndash;&ndash;openai-detect-sentiment**: Detect sentiment of text and images via OpenAI.
-- **&ndash;&ndash;openai-analyze-data**: Analyze text and images for important insights and generate conclusions via OpenAI.
-- **&ndash;&ndash;openai-classify <category> [<category> ...]**: Classify text and images via OpenAI to one of the specified categories. Multiple categories can be provided.
-- **&ndash;&ndash;openai-translate-to <language>**: Language to translate text and images to via OpenAI.
-- **&ndash;&ndash;openai-find <what>**: Find specified phrase, object or event in text and images via OpenAI.
-- **&ndash;&ndash;openai-text-to-speech**: Convert text to speech via OpenAI
-- **&ndash;&ndash;openai-embed**: Generate embedding of text via OpenAI
-- **&ndash;&ndash;openai-transcribe**: Convert speech to text (transcribe) via OpenAI
-- **&ndash;&ndash;openai-key <key>**: OpenAI API key.
-- **&ndash;&ndash;openai-model <model>** (default: gpt_5): Choose the OpenAI model. Available models are: gpt_5, gpt_5_mini, gpt_5_nano, gpt_5_chat_latest, gpt_41, gpt_41_mini, gpt_41_nano, gpt_4o, gpt_4o_mini, o3, o3_pro, o3_deep_research, o3_mini, o4_mini, o4_mini_deep_research.
-- **&ndash;&ndash;openai-temperature <temp>**: Force specified temperature for OpenAI prompts.
-- **&ndash;&ndash;openai-image-detail <detail>**: Force specified image detail parameter for OpenAI image prompts. Available options are: low, high and automatic.
-- **&ndash;&ndash;openai-tts-model <model>** (default: gpt_4o_mini_tts): Choose the TTS model. Available models are: gpt_4o_mini_tts, tts_1, tts_1_hd.
-- **&ndash;&ndash;openai-embed-model <model>** (default: text_embedding_3_small): Choose the embedding model. Available models are: text_embedding_3_small, text_embedding_3_large, text_embedding_ada_002.
-- **&ndash;&ndash;openai-transcribe-model <model>** (default: gpt_4o_transcribe): Choose the transcribe model. Available models are: gpt_4o_transcribe, gpt_4o_mini_transcribe, whisper_1.
-- **&ndash;&ndash;openai-voice <voice>** (default: alloy): Choose voice for text to speech conversion. Available voices are: alloy, echo, fable, onyx, nova, shimmer.
+- **&ndash;&ndash;openrouter-chat <prompt>**: Initiate a chat prompt for processing text and images via OpenRouter.
+- **&ndash;&ndash;openrouter-extract-entities**: Extract entities from text and images via OpenRouter.
+- **&ndash;&ndash;openrouter-extract-keywords <N>**: Extract N keywords/key phrases from text and images via OpenRouter.
+- **&ndash;&ndash;openrouter-summarize**: Summarize text and images via OpenRouter.
+- **&ndash;&ndash;openrouter-detect-sentiment**: Detect sentiment of text and images via OpenRouter.
+- **&ndash;&ndash;openrouter-analyze-data**: Analyze text and images for important insights and generate conclusions via OpenRouter.
+- **&ndash;&ndash;openrouter-classify <category> [<category> ...]**: Classify text and images via OpenRouter to one of the specified categories. Multiple categories can be provided.
+- **&ndash;&ndash;openrouter-translate-to <language>**: Language to translate text and images to via OpenRouter.
+- **&ndash;&ndash;openrouter-find <what>**: Find specified phrase, object or event in text and images via OpenRouter.
+- **&ndash;&ndash;openrouter-text-to-speech**: Convert text to speech via OpenRouter.
+- **&ndash;&ndash;openrouter-embed**: Generate embedding of text via OpenRouter.
+- **&ndash;&ndash;openrouter-transcribe**: Convert speech to text (transcribe) via OpenRouter.
+- **&ndash;&ndash;openrouter-key <key>**: OpenRouter API key.
+- **&ndash;&ndash;openrouter-model <model>** (default: openrouter/auto): OpenRouter model slug used by the chat-based options, e.g. openai/gpt-5 or anthropic/claude-sonnet-5. The default `openrouter/auto` lets OpenRouter choose the model.
+- **&ndash;&ndash;openrouter-temperature <temp>** (default: 0): Force specified temperature for OpenRouter prompts.
+- **&ndash;&ndash;openrouter-image-detail <detail>** (default: automatic): Force specified image detail parameter for OpenRouter image prompts. Available options are: low, high and automatic.
+- **&ndash;&ndash;openrouter-tts-model <model>** (required with `--openrouter-text-to-speech`): OpenRouter model slug for text to speech, e.g. x-ai/grok-voice-tts-1.0. List current speech models with `curl "https://openrouter.ai/api/v1/models?output_modalities=speech"`.
+- **&ndash;&ndash;openrouter-tts-response-format <format>** (default: mp3): Audio format produced by text to speech, e.g. mp3 or pcm (supported formats vary by model).
+- **&ndash;&ndash;openrouter-voice <voice>** (required with `--openrouter-text-to-speech`): Voice for text to speech conversion. Voices are model-specific; see the `supported_voices` field of the models API (e.g. eve for x-ai/grok-voice-tts-1.0).
+- **&ndash;&ndash;openrouter-embed-model <model>** (required with `--openrouter-embed`): OpenRouter model slug for embeddings, e.g. openai/text-embedding-3-small.
+- **&ndash;&ndash;openrouter-transcribe-model <model>** (required with `--openrouter-transcribe`): OpenRouter model slug for transcription, e.g. openai/whisper-large-v3 or openai/whisper-1.
+- **&ndash;&ndash;openrouter-transcribe-language <code>** (default: auto-detect): ISO 639-1 language code of the audio, e.g. en.
 
 ### Additional Options
 
@@ -1090,7 +1092,7 @@ Unlock the power of OpenAI with the following options:
 
 - **&ndash;&ndash;ocr-confidence-threshold <value>**: Set the OCR confidence threshold (0-100). Words with confidence below this will be excluded. The CLI passes this value to the OCR parser when provided; if omitted, the parser’s own default behavior applies.
 
-- **&ndash;&ndash;local-processing <yes|no> (default: yes)**: Process documents locally, including local OCR. When set to `no`, local parsers are skipped; this is useful when combining DF-0 with OpenAI processing for image/PDF data.
+- **&ndash;&ndash;local-processing <yes|no> (default: yes)**: Process documents locally, including local OCR. When set to `no`, local parsers are skipped; this is useful when combining DF-0 with OpenRouter processing for image/PDF data.
 
 - **&ndash;&ndash;use-stream <yes|no> (default: no)**: Pass the file stream to the SDK instead of the filename.
 
@@ -1134,54 +1136,64 @@ df0 --local-ai-prompt "What is the conclusion of the following document?" data_p
 df0 --local-ai-embed passage data_processing_definition.doc
 ```
 
-#### Leveraging OpenAI for Intelligent Document Analysis
+#### Leveraging OpenRouter for Intelligent Document Analysis
 
-Harness the power of OpenAI to analyze and extract valuable insights from your document. For example, initiate a chat prompt to interact with the document's content:
+Harness the power of OpenRouter to analyze and extract valuable insights from your document. For example, initiate a chat prompt to interact with the document's content:
 
 ```bash
-df0 --openai-chat "What are the key points in the document provided?" document.docx
+df0 --openrouter-key <key> --openrouter-chat "What are the key points in the document provided?" document.docx
 ```
 
 #### Sentiment Analysis for Document Understanding
 
-Gain a deeper understanding of the document's sentiment using OpenAI. Detect the sentiment of the exported data with the following command:
+Gain a deeper understanding of the document's sentiment using OpenRouter. Detect the sentiment of the exported data with the following command:
 
 ```bash
-df0 --openai-detect-sentiment document.docx
+df0 --openrouter-key <key> --openrouter-detect-sentiment document.docx
 ```
 
 #### Dynamic Language Translation for Multilingual Documents
 
-Translate your document into another language using OpenAI. Specify the target language with the following command:
+Translate your document into another language using OpenRouter. Specify the target language, and optionally a model, with the following commands:
 
 ```bash
-df0 --openai-translate-to spanish document.docx
+df0 --openrouter-key <key> --openrouter-translate-to spanish document.docx
+df0 --openrouter-key <key> --openrouter-model anthropic/claude-sonnet-5 --openrouter-translate-to spanish document.docx
 ```
 
 #### Summarization and text to speech conversion
 
-Summarize your document using GPT model, convert summary to audio using TTS model and read it loud:
+Summarize your document using an LLM, convert summary to audio using TTS model and read it loud:
 
 ```bash
-df0 document.doc --openai-summarize --openai-text-to-speech | ffplay -nodisp -autoexit -
+df0 document.doc --openrouter-key <key> --openrouter-summarize --openrouter-text-to-speech --openrouter-tts-model x-ai/grok-voice-tts-1.0 --openrouter-voice eve | ffplay -nodisp -autoexit -
 ```
 
 #### Searching for objects or events in image or photo
 
-Find objects or events in image using GPT model:
+Find objects or events in image using an LLM with vision support:
 
 ```bash
-df0 --openai-find car --local-processing=off image.jpg
-df0 --openai-find person --local-processing=off image.jpg
-df0 --openai-find running --local-processing=off image.jpg
+df0 --openrouter-key <key> --openrouter-find car --local-processing=off image.jpg
+df0 --openrouter-key <key> --openrouter-find person --local-processing=off image.jpg
+df0 --openrouter-key <key> --openrouter-find running --local-processing=off image.jpg
+```
+
+#### Speech to text conversion
+
+Transcribe a voice recording (e.g. mp3 file with meeting recording):
+
+```bash
+df0 --openrouter-key <key> --openrouter-transcribe-model openai/whisper-large-v3 --openrouter-transcribe meeting.mp3
+df0 --openrouter-key <key> --openrouter-transcribe-model openai/whisper-large-v3 --openrouter-transcribe-language en --openrouter-transcribe meeting.mp3
 ```
 
 #### Embeddings generation for advanced AI applications
 
-Generate embedding of document using OpenAI service for advanced AI applications like Retrieval Augmented Generation (RAG), semantic search, and document clustering.
+Generate embedding of document using OpenRouter for advanced AI applications like Retrieval Augmented Generation (RAG), semantic search, and document clustering.
 
 ```bash
-df0 --openai-embed data_processing_definition.doc
+df0 --openrouter-key <key> --openrouter-embed-model openai/text-embedding-3-small --openrouter-embed data_processing_definition.doc
 ```
 
 Happy Document Processing with DF-0 CLI!

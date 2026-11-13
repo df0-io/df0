@@ -25,20 +25,12 @@
 #include "ai_elements.h"
 #include <boost/program_options.hpp>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <fstream>
-#include "analyze_data.h"
-#include "classify.h"
 #include "content_type.h"
 #include "csv_exporter.h"
 #include "archives_parser.h"
-#include "detect_sentiment.h"
-#include "embed.h"
-
-
-#include "extract_entities.h"
-#include "extract_keywords.h"
-#include "find.h"
 #include "html_exporter.h"
 #include "language.h"
 #include "audit.hpp"
@@ -49,15 +41,23 @@
 #include "meta_data_exporter.h"
 #include "ocr_parser.h"
 #include "office_formats_parser.h"
+#include "openrouter_analyze_data.h"
+#include "openrouter_classify.h"
+#include "openrouter_detect_sentiment.h"
+#include "openrouter_embed.h"
+#include "openrouter_extract_entities.h"
+#include "openrouter_extract_keywords.h"
+#include "openrouter_find.h"
+#include "openrouter_summarize.h"
+#include "openrouter_task.h"
+#include "openrouter_text_to_speech.h"
+#include "openrouter_transcribe.h"
+#include "openrouter_translate_to.h"
 #include "pipeline/output_element.hpp"
 #include "plain_text_exporter.h"
 #include "post.h"
 #include "resource_path.h"
 #include "standard_filter.h"
-#include "summarize.h"
-#include "text_to_speech.h"
-#include "transcribe.h"
-#include "translate_to.h"
 #include "version.h"
 #include "pipeline/chain_expression.hpp"
 #include "pipeline/input_element.hpp"
@@ -90,7 +90,7 @@ namespace df0
 	using magic_enum::ostream_operators::operator<<;
 }
 
-namespace df0::openai
+namespace df0::openrouter
 {
 	using magic_enum::istream_operators::operator>>;
 	using magic_enum::ostream_operators::operator<<;
@@ -205,6 +205,30 @@ int run_with_auditor(
 	data_source data,
 	audit::auditor_ref<auditor_type> auditor);
 
+static bool check_required_options(
+	const boost::program_options::variables_map& vm,
+	const char* feature,
+	std::initializer_list<const char*> required,
+	const char* where_to_look)
+{
+	if (!vm.count(feature))
+		return true;
+	std::string missing;
+	for (const char* option : required)
+	{
+		if (vm.count(option))
+			continue;
+		if (!missing.empty())
+			missing += " and ";
+		missing += std::string{"--"} + option;
+	}
+	if (missing.empty())
+		return true;
+	std::cerr << "Error: --" << feature << " requires " << missing << ".\n"
+	          << where_to_look << std::endl;
+	return false;
+}
+
 int main(int argc, char* argv[])
 {
 	bool local_processing;
@@ -221,26 +245,28 @@ int main(int argc, char* argv[])
 		("local-ai-prompt", po::value<std::string>(), "prompt to process text via local AI model")
 		("local-ai-ct2-embed", po::value<embed_prefix_type>()->implicit_value(embed_prefix_type::none), "generate embedding of text via local AI model. Optional argument selects the prefix type: (e.g. \"passage: \" or \"query: \" or \"none: \").")
 		("local-ai-model", po::value<std::string>(), "path to local AI model data (build-in default model is used if not specified)")
-		("openai-chat", po::value<std::string>(), "prompt to process text and images via OpenAI")
-		("openai-extract-entities", "extract entities from text and images via OpenAI")
-		("openai-extract-keywords", po::value<unsigned int>(), "extract N keywords/key phrases from text and images via OpenAI")
-		("openai-summarize", "summarize text and images via OpenAI")
-		("openai-detect-sentiment", "detect sentiment of text and images via OpenAI")
-		("openai-analyze-data", "analyze text and images for inportant insights and generate conclusions via OpenAI")
-		("openai-classify", po::value<std::vector<std::string>>()->multitoken(), "classify text and images via OpenAI to one of specified categories")
-		("openai-translate-to", po::value<std::string>(), "language to translate text and images to via OpenAI")
-		("openai-find", po::value<std::string>(), "find phrase, object or event in text and images via OpenAI")
-		("openai-text-to-speech", "convert text to speech via OpenAI")
-		("openai-embed", "generate embedding of text via OpenAI")
-		("openai-transcribe", "convert speech to text (transcribe) via OpenAI")
-		("openai-key", po::value<std::string>()->default_value(""), "OpenAI API key")
-		("openai-model", po::value<openai::model>()->default_value(openai::model::gpt_5), enum_names_str<openai::model>().c_str())
-		("openai-tts-model", po::value<openai::text_to_speech_model>()->default_value(openai::text_to_speech_model::gpt_4o_mini_tts), enum_names_str<openai::text_to_speech_model>().c_str())
-		("openai-embed-model", po::value<openai::embed_model>()->default_value(openai::embed_model::text_embedding_3_small), enum_names_str<openai::embed_model>().c_str())
-		("openai-transcribe-model", po::value<openai::transcribe_model>()->default_value(openai::transcribe_model::gpt_4o_transcribe), enum_names_str<openai::transcribe_model>().c_str())
-		("openai-voice", po::value<openai::text_to_speech_voice>()->default_value(openai::text_to_speech_voice::alloy), enum_names_str<openai::text_to_speech_voice>().c_str())
-		("openai-temperature", po::value<float>(), "force specified temperature for OpenAI prompts")
-		("openai-image-detail", po::value<openai::image_detail>()->default_value(openai::image_detail::automatic), enum_names_str<openai::image_detail>().c_str())
+		("openrouter-chat", po::value<std::string>(), "prompt to process text and images via OpenRouter")
+		("openrouter-extract-entities", "extract entities from text and images via OpenRouter")
+		("openrouter-extract-keywords", po::value<unsigned int>(), "extract N keywords/key phrases from text and images via OpenRouter")
+		("openrouter-summarize", "summarize text and images via OpenRouter")
+		("openrouter-detect-sentiment", "detect sentiment of text and images via OpenRouter")
+		("openrouter-analyze-data", "analyze text and images for important insights and generate conclusions via OpenRouter")
+		("openrouter-classify", po::value<std::vector<std::string>>()->multitoken(), "classify text and images via OpenRouter to one of specified categories")
+		("openrouter-translate-to", po::value<std::string>(), "language to translate text and images to via OpenRouter")
+		("openrouter-find", po::value<std::string>(), "find phrase, object or event in text and images via OpenRouter")
+		("openrouter-text-to-speech", "convert text to speech via OpenRouter")
+		("openrouter-embed", "generate embedding of text via OpenRouter")
+		("openrouter-transcribe", "convert speech to text (transcribe) via OpenRouter")
+		("openrouter-key", po::value<std::string>()->default_value(""), "OpenRouter API key (create one at https://openrouter.ai/keys)")
+		("openrouter-model", po::value<std::string>()->default_value("openrouter/auto"), "OpenRouter model slug for chat-based options, e.g. openai/gpt-5 or anthropic/claude-sonnet-5 (openrouter/auto lets OpenRouter choose)")
+		("openrouter-tts-model", po::value<std::string>(), "OpenRouter model slug for text-to-speech (required with --openrouter-text-to-speech), e.g. x-ai/grok-voice-tts-1.0")
+		("openrouter-tts-response-format", po::value<std::string>()->default_value("mp3"), "audio format produced by text-to-speech, e.g. mp3|pcm")
+		("openrouter-embed-model", po::value<std::string>(), "OpenRouter model slug for embeddings (required with --openrouter-embed), e.g. openai/text-embedding-3-small")
+		("openrouter-transcribe-model", po::value<std::string>(), "OpenRouter model slug for transcription (required with --openrouter-transcribe), e.g. openai/whisper-large-v3")
+		("openrouter-transcribe-language", po::value<std::string>()->default_value(""), "ISO-639-1 language code of the audio for transcription, e.g. en (auto-detect if empty)")
+		("openrouter-voice", po::value<std::string>(), "voice used by text-to-speech (required with --openrouter-text-to-speech; voices are model-specific)")
+		("openrouter-temperature", po::value<float>(), "force specified temperature for OpenRouter prompts")
+		("openrouter-image-detail", po::value<openrouter::image_detail>()->default_value(openrouter::image_detail::automatic), enum_names_str<openrouter::image_detail>().c_str())
 		("language", po::value<std::vector<language>>()->default_value({language::eng}, "eng"), "Set the document language(s) for OCR as ISO 639-3 identifiers like: spa, fra, deu, rus, chi_sim, chi_tra etc. More than 100 languages are supported. Multiple languages can be enabled.")
 		("ocr-confidence-threshold", po::value<float>()->notifier([](float val) {
 			if (val < 0.0f || val > 100.0f) {
@@ -296,6 +322,18 @@ int main(int argc, char* argv[])
 		std::cerr << "Error: " << e.what() << std::endl;
 		return 1;
 	}
+
+	if (!check_required_options(vm, "openrouter-text-to-speech",
+			{"openrouter-tts-model", "openrouter-voice"},
+			"List speech models and their voices (supported_voices) with:\n"
+			"  curl \"https://openrouter.ai/api/v1/models?output_modalities=speech\"")
+		|| !check_required_options(vm, "openrouter-embed",
+			{"openrouter-embed-model"},
+			"See embedding models at https://openrouter.ai/collections/embedding-models")
+		|| !check_required_options(vm, "openrouter-transcribe",
+			{"openrouter-transcribe-model"},
+			"See transcription models at https://openrouter.ai/collections/speech-to-text-models"))
+		return 1;
 
 	std::string file_name = vm["input-file"].as<std::string>();
 
@@ -379,6 +417,15 @@ int run_with_auditor(
 		return "use_stream"_v = vm["use-stream"].as<bool>(), "file_name"_v = file_name;
 	});
 
+	const std::string& key = vm["openrouter-key"].as<std::string>();
+	const std::string& model = vm["openrouter-model"].as<std::string>();
+	const float temperature =
+		vm.count("openrouter-temperature")
+			? vm["openrouter-temperature"].as<float>()
+			: 0.0f;
+	const openrouter::image_detail image_detail =
+		vm["openrouter-image-detail"].as<openrouter::image_detail>();
+
 	auto optional_suffix =
 		maybe(vm.count("http-post"), [&] {
 			return http::post<configured_auditor>(
@@ -387,91 +434,98 @@ int run_with_auditor(
 				http::ssl_verify_peer{true},
 				auditor);
 		})
-		| maybe(vm.count("openai-chat"), [&] {
-			return openai::chat<configured_auditor>(
-				vm["openai-chat"].as<std::string>(),
-				vm["openai-key"].as<std::string>(),
-				vm["openai-model"].as<openai::model>(),
-				vm.count("openai-temperature")
-					? vm["openai-temperature"].as<float>()
-					: 0.0f,
-				vm["openai-image-detail"].as<openai::image_detail>(),
+		| maybe(vm.count("openrouter-chat"), [&] {
+			return openrouter::task<configured_auditor>(
+				vm["openrouter-chat"].as<std::string>(),
+				key,
+				model,
+				temperature,
+				image_detail,
 				auditor);
 		})
-		| maybe(vm.count("openai-extract-entities"), [&] {
-			return openai::extract_entities<configured_auditor>(
-				vm["openai-key"].as<std::string>(),
-				vm["openai-model"].as<openai::model>(),
-				vm.count("openai-temperature")
-					? vm["openai-temperature"].as<float>()
-					: 0.0f,
-				vm["openai-image-detail"].as<openai::image_detail>(),
+		| maybe(vm.count("openrouter-extract-entities"), [&] {
+			return openrouter::extract_entities<configured_auditor>(
+				key,
+				model,
+				temperature,
+				image_detail,
 				auditor);
 		})
-		| maybe(vm.count("openai-extract-keywords"), [&] {
-			return openai::extract_keywords<configured_auditor>(
-				vm["openai-extract-keywords"].as<unsigned int>(),
-				vm["openai-key"].as<std::string>(),
-				vm["openai-model"].as<openai::model>(),
-				vm.count("openai-temperature")
-					? vm["openai-temperature"].as<float>()
-					: 0.0f,
-				vm["openai-image-detail"].as<openai::image_detail>(),
+		| maybe(vm.count("openrouter-extract-keywords"), [&] {
+			return openrouter::extract_keywords<configured_auditor>(
+				vm["openrouter-extract-keywords"].as<unsigned int>(),
+				key,
+				model,
+				temperature,
+				image_detail,
 				auditor);
 		})
-		| maybe(vm.count("openai-summarize"), [&] {
-			return openai::summarize<configured_auditor>(
-				vm["openai-key"].as<std::string>(),
-				vm["openai-model"].as<openai::model>(),
-				vm.count("openai-temperature")
-					? vm["openai-temperature"].as<float>()
-					: 0.0f,
-				vm["openai-image-detail"].as<openai::image_detail>(),
+		| maybe(vm.count("openrouter-summarize"), [&] {
+			return openrouter::summarize<configured_auditor>(
+				key,
+				model,
+				temperature,
+				image_detail,
 				auditor);
 		})
-		| maybe(vm.count("openai-detect-sentiment"), [&] {
-			return openai::detect_sentiment<configured_auditor>(
-				vm["openai-key"].as<std::string>(),
-				vm["openai-model"].as<openai::model>(),
-				vm.count("openai-temperature")
-					? vm["openai-temperature"].as<float>()
-					: 0.0f,
-				vm["openai-image-detail"].as<openai::image_detail>(),
+		| maybe(vm.count("openrouter-detect-sentiment"), [&] {
+			return openrouter::detect_sentiment<configured_auditor>(
+				key,
+				model,
+				temperature,
+				image_detail,
 				auditor);
 		})
-		| maybe(vm.count("openai-analyze-data"), [&] {
-			return openai::analyze_data<configured_auditor>(
-				vm["openai-key"].as<std::string>(),
-				vm["openai-model"].as<openai::model>(),
-				vm.count("openai-temperature")
-					? vm["openai-temperature"].as<float>()
-					: 0.0f,
-				vm["openai-image-detail"].as<openai::image_detail>(),
+		| maybe(vm.count("openrouter-analyze-data"), [&] {
+			return openrouter::analyze_data<configured_auditor>(
+				key,
+				model,
+				temperature,
+				image_detail,
 				auditor);
 		})
-		| maybe(vm.count("openai-classify"), [&] {
+		| maybe(vm.count("openrouter-classify"), [&] {
 			const std::vector<std::string>& categories =
-				vm["openai-classify"].as<std::vector<std::string>>();
+				vm["openrouter-classify"].as<std::vector<std::string>>();
 			std::set<std::string> categories_set(categories.begin(), categories.end());
-			return openai::classify<configured_auditor>(
+			return openrouter::classify<configured_auditor>(
 				categories_set,
-				vm["openai-key"].as<std::string>(),
-				vm["openai-model"].as<openai::model>(),
-				vm.count("openai-temperature")
-					? vm["openai-temperature"].as<float>()
-					: 0.0f,
-				vm["openai-image-detail"].as<openai::image_detail>(),
+				key,
+				model,
+				temperature,
+				image_detail,
 				auditor);
 		})
-		| maybe(vm.count("openai-translate-to"), [&] {
-			return openai::translate_to<configured_auditor>(
-				vm["openai-translate-to"].as<std::string>(),
-				vm["openai-key"].as<std::string>(),
-				vm["openai-model"].as<openai::model>(),
-				vm.count("openai-temperature")
-					? vm["openai-temperature"].as<float>()
-					: 0.0f,
-				vm["openai-image-detail"].as<openai::image_detail>(),
+		| maybe(vm.count("openrouter-translate-to"), [&] {
+			return openrouter::translate_to<configured_auditor>(
+				vm["openrouter-translate-to"].as<std::string>(),
+				key,
+				model,
+				temperature,
+				image_detail,
+				auditor);
+		})
+		| maybe(vm.count("openrouter-find"), [&] {
+			return openrouter::find<configured_auditor>(
+				vm["openrouter-find"].as<std::string>(),
+				key,
+				model,
+				temperature,
+				image_detail,
+				auditor);
+		})
+		| maybe(vm.count("openrouter-text-to-speech"), [&] {
+			return openrouter::text_to_speech<configured_auditor>(
+				key,
+				vm["openrouter-tts-model"].as<std::string>(),
+				vm["openrouter-voice"].as<std::string>(),
+				vm["openrouter-tts-response-format"].as<std::string>(),
+				auditor);
+		})
+		| maybe(vm.count("openrouter-embed"), [&] {
+			return openrouter::embed<configured_auditor>(
+				key,
+				vm["openrouter-embed-model"].as<std::string>(),
 				auditor);
 		})
 #ifdef DF0_LOCAL_AI
@@ -505,31 +559,7 @@ int run_with_auditor(
 			};
 		})
 #endif
-		| maybe(vm.count("openai-find"), [&] {
-			return openai::find<configured_auditor>(
-				vm["openai-find"].as<std::string>(),
-				vm["openai-key"].as<std::string>(),
-				vm["openai-model"].as<openai::model>(),
-				vm.count("openai-temperature")
-					? vm["openai-temperature"].as<float>()
-					: 0.0f,
-				vm["openai-image-detail"].as<openai::image_detail>(),
-				auditor);
-		})
-		| maybe(vm.count("openai-text-to-speech"), [&] {
-			return openai::text_to_speech<configured_auditor>(
-				vm["openai-key"].as<std::string>(),
-				vm["openai-tts-model"].as<openai::text_to_speech_model>(),
-				vm["openai-voice"].as<openai::text_to_speech_voice>(),
-				auditor);
-		})
-		| maybe(vm.count("openai-embed"), [&] {
-			return openai::embed<configured_auditor>(
-				vm["openai-key"].as<std::string>(),
-				vm["openai-embed-model"].as<openai::embed_model>(),
-				auditor);
-		})
-		| [](message_ptr msg,
+		| pipeline::function_transformer{[](message_ptr msg,
 			 const message_callbacks& emit_message) -> continuation
 			{
 				if (msg->is<ai::embedding>())
@@ -546,8 +576,8 @@ int run_with_auditor(
 					return emit_message(data_source{embedding_str});
 				}
 				return emit_message(std::move(msg));
-			}
-		| [](message_ptr msg,
+			}}
+		| pipeline::function_transformer{[](message_ptr msg,
 			 const message_callbacks& emit_message) -> continuation
 			{
 				if (msg->is<std::exception_ptr>())
@@ -556,15 +586,16 @@ int run_with_auditor(
 							   msg->get<std::exception_ptr>())
 						<< std::endl;
 				return emit_message(std::move(msg));
-			};
+			}};
 
-	if (vm.count("openai-transcribe"))
+	if (vm.count("openrouter-transcribe"))
 	{
 		auto pipeline =
 			content_type::detector{}
-			| openai::transcribe<configured_auditor>(
-				vm["openai-key"].as<std::string>(),
-				vm["openai-transcribe-model"].as<openai::transcribe_model>(),
+			| openrouter::transcribe<configured_auditor>(
+				key,
+				vm["openrouter-transcribe-model"].as<std::string>(),
+				vm["openrouter-transcribe-language"].as<std::string>(),
 				auditor)
 			| plain_text_exporter{}
 			| std::move(optional_suffix);
