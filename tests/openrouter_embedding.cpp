@@ -8,14 +8,18 @@
 /**************************************************************************/
 
 #include "df0.hpp"
-#include <fstream>
 
 int main(int argc, char* argv[])
 {
   using namespace df0;
+  std::vector<message_ptr> out_msgs;
+
   try
   {
-    std::filesystem::path("1.doc") | content_type::detector{} | office_formats_parser{} | plain_text_exporter() | openai::summarize(environment::get("OPENAI_API_KEY").value()) | openai::text_to_speech(environment::get("OPENAI_API_KEY").value()) | std::ofstream("summary.mp3");
+    std::filesystem::path("data_processing_definition.doc") | content_type::detector{} | office_formats_parser{} | plain_text_exporter() | openrouter::embed(environment::get("OPENROUTER_API_KEY").value(), "openai/text-embedding-3-small") | out_msgs;
+    ensure(out_msgs.size()) == 1;
+    ensure(out_msgs[0]->is<ai::embedding>()) == true;
+    ensure(out_msgs[0]->get<ai::embedding>().values.size()) == 1536;
   }
   catch (const std::exception& e)
   {

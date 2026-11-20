@@ -48,7 +48,7 @@
 #include "local_ai_detect_sentiment.h"
 #endif
 #include "ai_elements.h"
-#include "classify.h"
+
 #include "concepts.h"
 #include "content_type.h"
 #include "content_type_by_file_extension.h"
@@ -60,11 +60,8 @@
 #include "convert.h"
 #include "cosine_similarity.h"
 #include "archives_parser.h"
-#include "detect_sentiment.h"
-#include "embed.h"
 #include "ensure.h"
 #include "environment.h"
-#include "find.h"
 #include "fuzzy_match.h"
 #include "pipeline.hpp"
 #include "mail_elements.h"
@@ -75,12 +72,20 @@
 #include "plain_text_writer.h"
 #include "html_exporter.h"
 #include "serialization.h"
-#include "summarize.h"
-#include "text_to_speech.h"
-#include "transcribe.h"
-#include "translate_to.h"
 #include "type_name.h"
 #include "xml.h"
+#include "openrouter_analyze_data.h"
+#include "openrouter_classify.h"
+#include "openrouter_detect_sentiment.h"
+#include "openrouter_embed.h"
+#include "openrouter_extract_entities.h"
+#include "openrouter_extract_keywords.h"
+#include "openrouter_find.h"
+#include "openrouter_summarize.h"
+#include "openrouter_task.h"
+#include "openrouter_transcribe.h"
+#include "openrouter_translate_to.h"
+#include "openrouter_text_to_speech.h"
 // IWYU pragma: end_exports
 
 /**
@@ -121,8 +126,8 @@
 */
 
 /**
- * @example openai_classify.cpp
- * This example shows how to classify a document using the OpenAI API.
+ * @example openrouter_classify.cpp
+ * This example shows how to classify a document using the OpenRouter API.
 */
 
 /**
@@ -131,8 +136,8 @@
 */
 
 /**
- * @example openai_translate.cpp
- * This example shows how to translate a document using the OpenAI API.
+ * @example openrouter_translate.cpp
+ * This example shows how to translate a document using the OpenRouter API.
 */
 
 /**
@@ -141,8 +146,8 @@
 */
 
 /**
- * @example openai_sentiment.cpp
- * This example shows how to detect the sentiment of a document using the OpenAI API.
+ * @example openrouter_sentiment.cpp
+ * This example shows how to detect the sentiment of a document using the OpenRouter API.
 */
 
 /**
@@ -151,13 +156,13 @@
 */
 
 /**
- * @example openai_voice_summary.cpp
- * This example shows how to create a voice summary by chaining an OpenAI summarizer and a text-to-speech model.
+ * @example openrouter_transcribe.cpp
+ * This example shows how to transcribe an audio file to text using the OpenRouter API.
 */
 
 /**
- * @example openai_transcribe_summary.cpp
- * This example shows how to transcribe an audio file and then summarize the resulting text using the OpenAI API.
+ * @example openrouter_text_to_speech.cpp
+ * This example shows how to convert text to speech (an mp3 audio stream) using the OpenRouter API.
 */
 
 /**
@@ -166,13 +171,13 @@
 */
 
 /**
- * @example openai_find_image.cpp
- * This example shows how to find objects within an image using the OpenAI API.
+ * @example openrouter_find_image.cpp
+ * This example shows how to find objects within an image using the OpenRouter API.
 */
 
 /**
- * @example openai_embedding.cpp
- * This example shows how to generate a text embedding for a document using the OpenAI API.
+ * @example openrouter_embedding.cpp
+ * This example shows how to generate a text embedding for a document using the OpenRouter API.
 */
 
 /**
