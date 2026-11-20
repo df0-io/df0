@@ -12,7 +12,8 @@
 #include <optional>
 #include <stack>
 #include <string>
-
+#include <string_view>
+#include <istream>
 #include "eml_parser.h"
 
 #include "charset_converter.h"
@@ -328,6 +329,11 @@ public:
 			handle_header_line(line);
 	}
 
+	bool in_headers() const
+	{
+		return m_in_headers;
+	}
+
 private:
 	bool is_boundary_line(const std::string& line) const
 	{
@@ -460,6 +466,51 @@ private:
 	audit::auditor_ref<auditor_type> m_auditor;
 };
 
+bool has_unterminated_boundary_quote(const std::string& header)
+{
+	std::string header_copy = header;
+	std::transform(header_copy.begin(), header_copy.end(), header_copy.begin(),
+		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	constexpr std::string_view key = "boundary=\"";
+	const auto pos = header_copy.rfind(key);
+	return pos != std::string::npos &&
+	    header_copy.find('"', pos + key.size()) == std::string::npos;
+}
+
+template<typename auditor_type>
+void rejoin_split_boundary(std::istream& stream, std::string& line,
+    audit::auditor_ref<auditor_type> auditor)
+{
+	constexpr std::string_view content_type_prefix = "content-type:";
+	if (line.size() < content_type_prefix.size()
+	    || !std::equal(content_type_prefix.begin(), content_type_prefix.end(),
+			line.begin(), [](char a, char b)
+	        { return a == std::tolower(static_cast<unsigned char>(b));}))
+	{
+		return;
+	}
+	while (stream.peek() == ' ' || stream.peek() == '\t')
+	{
+		std::string continuation;
+		if (!std::getline(stream, continuation))
+			break;
+		normalize_line(continuation, auditor);
+		if (has_unterminated_boundary_quote(line))
+		{
+			const auto first = continuation.find_first_not_of(" \t");
+			if (first != std::string::npos)
+			{
+			    line += continuation.substr(first);
+			}
+		}
+		else
+		{
+		    line += continuation;
+		}
+	}
+	audit::entry(auditor, [&]{ return "unfolded_content_type"_v = line; });
+}
+
 template<typename auditor_type>
 mailio::message parse_message(
 	const data_source& data,
@@ -477,6 +528,8 @@ mailio::message parse_message(
 		while (std::getline(*stream, line))
 		{
 			normalize_line(line, auditor);
+			if (tracker.in_headers())
+				rejoin_split_boundary(*stream, line, auditor);
 			audit::entry(auditor, [&]{ return "line"_v = line; });
 			tracker.process_line(line, mime_entity);
 			mime_entity.parse_by_line(line);
