@@ -216,7 +216,7 @@ static bool check_required_options(
 	std::string missing;
 	for (const char* option : required)
 	{
-		if (vm.count(option))
+	    if (vm.count(option) && !vm[option].as<std::string>().empty())
 			continue;
 		if (!missing.empty())
 			missing += " and ";

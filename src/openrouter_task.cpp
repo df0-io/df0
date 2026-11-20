@@ -13,33 +13,33 @@
 #include "audit/entry.hpp"
 #include "audit/json_stream_auditor.hpp"
 #include "audit/scope.hpp"
+#include "audit/sensitive_tag.hpp"
 #include "audit/with_auditor.hpp"
 #include "base64.h"
+#include "credentials.h"
 #include "error_tags.h"
+#include "http_types.h"
 #include "make_error.h"
 #include "named.h"
 #include "pipeline/input_element.hpp"
 #include "pipeline/output_element.hpp"
 #include "post.h"
-#include "serialization_enum.h"    // IWYU pragma: keep
-#include "serialization_message.h" // IWYU pragma: keep
+#include "serialization_credentials.h" // IWYU pragma: keep
+#include "serialization_enum.h"        // IWYU pragma: keep
+#include "serialization_http_types.h"  // IWYU pragma: keep
+#include "serialization_message.h"     // IWYU pragma: keep
 #include <boost/json.hpp>
 #include <sstream>
 
 namespace {
-
-std::string describe_error(const boost::json::value &error) {
+int error_code(const boost::json::value &error) {
   if (const auto *obj = error.if_object())
-    if (const auto *msg = obj->if_contains("message"); msg && msg->is_string())
-      return std::string{msg->as_string()};
-  return "unknown error";
-}
-
-std::string snippet(const std::string &s, std::size_t max = 512) {
-  return s.size() <= max
-             ? s
-             : s.substr(0, max) + "...[" + std::to_string(s.size()) +
-                   " bytes total]";
+    if (const auto *code = obj->if_contains("code"); code && code->is_int64()) {
+      const std::int64_t v = code->as_int64();
+      if (v >= 0 && v <= 999)
+        return static_cast<int>(v);
+    }
+  return 0;
 }
 } // anonymous namespace
 
@@ -55,14 +55,15 @@ struct pimpl_impl<openrouter::task<auditor_type>>
   explicit pimpl_impl(const std::string &system_message,
                       const std::string &api_key, const std::string &model,
                       float temperature, image_detail image_detail,
-                      audit::auditor_ref<auditor_type> auditor, bool allow_truncated)
+                      audit::auditor_ref<auditor_type> auditor,
+                      bool allow_truncated)
       : audit::with_auditor<auditor_type>{auditor},
         m_system_message(system_message), m_api_key(api_key), m_model(model),
         m_temperature(temperature), m_image_detail(image_detail),
         m_allow_truncated(allow_truncated) {}
 
   std::string m_system_message;
-  std::string m_api_key;
+  credentials::api_key m_api_key;
   std::string m_model;
   float m_temperature;
   image_detail m_image_detail;
@@ -78,18 +79,20 @@ template <typename auditor_type>
 task<auditor_type>::task(const std::string &system_message,
                          const std::string &api_key, const std::string &model,
                          float temperature, image_detail image_detail,
-                         audit::auditor_ref<auditor_type> auditor, bool allow_truncated)
+                         audit::auditor_ref<auditor_type> auditor,
+                         bool allow_truncated)
     : with_pimpl<task<auditor_type>>(system_message, api_key, model,
-                                     temperature, image_detail,
-                                     auditor, allow_truncated),
+                                     temperature, image_detail, auditor,
+                                     allow_truncated),
       audit::with_auditor<auditor_type>(auditor) {
-  // api_key intentionally NOT audited (see DESIGN-AUDIT-UNIFIED, "Secrets").
   audit::scope audit_scope{this->auditor(), [&] {
-                             return "system_message"_v = system_message,
-                                    "model"_v = model,
+                             return "model"_v = model,
                                     "temperature"_v = temperature,
                                     "image_detail"_v = image_detail;
                            }};
+  audit::entry(
+      this->auditor(), [&] { return "system_message"_v = system_message; },
+      audit::sensitive{});
 }
 
 namespace {
@@ -111,14 +114,15 @@ std::string image_detail_to_string(openrouter::image_detail image_detail) {
 enum class user_msg_type { text, image_url };
 
 template <typename auditor_type>
-std::string prepare_query(const std::string &system_msg,
-                          openrouter::user_msg_type user_msg_type,
-                          const std::string &user_msg, const std::string &model,
-                          float temperature, image_detail image_detail,
-                          audit::auditor_ref<auditor_type> auditor) {
+http::request prepare_query(const std::string &system_msg,
+                            openrouter::user_msg_type user_msg_type,
+                            const std::string &user_msg,
+                            const std::string &model, float temperature,
+                            image_detail image_detail,
+                            audit::auditor_ref<auditor_type> auditor) {
   audit::scope audit_scope{auditor, [&] {
-                             return "system_msg"_v = system_msg,
-                                    "user_msg"_v = user_msg, "model"_v = model,
+                             return "user_msg"_v = user_msg.size(),
+                                    "model"_v = model,
                                     "temperature"_v = temperature,
                                     "image_detail"_v = image_detail;
                            }};
@@ -139,89 +143,96 @@ std::string prepare_query(const std::string &system_msg,
                                           {"detail", image_detail_to_string(
                                                          image_detail)}}}}}}}}},
       {"temperature", temperature}};
-  return boost::json::serialize(query);
+  return http::request{boost::json::serialize(query)};
 }
 
 template <typename auditor_type>
-std::string post_request(const std::string &query, const std::string &api_key,
-                         audit::auditor_ref<auditor_type> auditor) {
-  audit::scope audit_scope{auditor, [&] { return "query"_v = query; }};
+http::response post_request(const http::request &query,
+                            const credentials::api_key &api_key,
+                            audit::auditor_ref<auditor_type> auditor) {
+  audit::scope audit_scope{
+      auditor, [&] { return "query_size"_v = query.value().size(); }};
+  audit::entry(auditor, [&] { return "query"_v = query; }, audit::sensitive{});
   std::ostringstream response_stream{};
   try {
-    data_source{query, mime_type{"application/json"}, confidence::highest} |
+    data_source{query.value(), mime_type{"application/json"},
+                confidence::highest} |
         http::post<auditor_type>(
-            "https://openrouter.ai/api/v1/chat/completions", api_key,
+            "https://openrouter.ai/api/v1/chat/completions", api_key.reveal(),
             http::ssl_verify_peer{true}, auditor) |
         response_stream;
   } catch (const std::exception &e) {
-    std::throw_with_nested(DF0_MAKE_ERROR("OpenRouter HTTP request failed", query.size()));
+    audit::entry(
+        auditor, [&] { return "http_error"_v = errors::diagnostic_message(e); },
+        audit::sensitive{});
+    throw DF0_MAKE_ERROR("OpenRouter HTTP request failed",
+                         query.value().size());
   }
-  return response_stream.str();
+  return http::response{response_stream.str()};
 }
 
 template <typename auditor_type>
-std::string parse_response(const std::string &response, bool allow_truncated,
+std::string parse_response(const http::response &response, bool allow_truncated,
                            audit::auditor_ref<auditor_type> auditor) {
-  audit::scope audit_scope{auditor, [&] { return "response"_v = response; }};
-  try {
-    boost::json::value response_val = boost::json::parse(response);
-    boost::json::object *response_obj = response_val.if_object();
-    if (!response_obj) {
-      throw DF0_MAKE_ERROR("OpenRouter response is not a JSON object");
-    }
-
-    if (const auto *error = response_obj->if_contains("error");
-        error && !error->is_null()) {
-      throw DF0_MAKE_ERROR("OpenRouter API returned an error",
-                           describe_error(*error));
-    }
-    const boost::json::array *choices = nullptr;
-    if (const auto *c = response_obj->if_contains("choices")) {
-      choices = c->if_array();
-    }
-    if (!choices || choices->empty()) {
-      throw DF0_MAKE_ERROR("OpenRouter response contains no choices");
-    }
-    const boost::json::object *choice = (*choices)[0].if_object();
-    if (!choice) {
-      throw DF0_MAKE_ERROR("OpenRouter response has a malformed choice");
-    }
-    if (const auto *error = choice->if_contains("error");
-        error && !error->is_null()) {
-      throw DF0_MAKE_ERROR("OpenRouter choice returned an error",
-                           describe_error(*error));
-    }
-
-    if (const auto *fr = choice->if_contains("finish_reason");
-        fr && fr->is_string()) {
-      const std::string reason{fr->as_string()};
-      if (reason == "length" && !allow_truncated)
-        throw DF0_MAKE_ERROR("OpenRouter output truncated", reason);
-      if (reason == "content_filter")
-        throw DF0_MAKE_ERROR("OpenRouter output blocked by content filter",
-                             reason);
-      if (reason == "error")
-        throw DF0_MAKE_ERROR("OpenRouter generation failed", reason);
-      if (reason == "tool_calls")
-        throw DF0_MAKE_ERROR("OpenRouter returned tool calls, which this "
-                             "element does not support",
-                             reason);
-    }
-
-    const boost::json::object *message = nullptr;
-    if (const auto *m = choice->if_contains("message"))
-      message = m->if_object();
-    if (!message)
-      throw DF0_MAKE_ERROR("OpenRouter choice has no message");
-
-    const auto *content = message->if_contains("content");
-    if (!content || !content->is_string())
-      throw DF0_MAKE_ERROR("OpenRouter message has no text content");
-
-    return std::string{content->as_string()};
-  } catch (const std::exception &e) {
-    std::throw_with_nested(DF0_MAKE_ERROR(snippet(response)));
+  audit::scope audit_scope{
+      auditor, [&] { return "response_size"_v = response.value().size(); }};
+  audit::entry(
+      auditor, [&] { return "response"_v = response; }, audit::sensitive{});
+  boost::json::value response_val = boost::json::parse(response.value());
+  boost::json::object *response_obj = response_val.if_object();
+  if (!response_obj) {
+    throw DF0_MAKE_ERROR("OpenRouter response is not a JSON object");
   }
+
+  if (const auto *error = response_obj->if_contains("error");
+      error && !error->is_null()) {
+    throw DF0_MAKE_ERROR("OpenRouter API returned an error",
+                         error_code(*error));
+  }
+  const boost::json::array *choices = nullptr;
+  if (const auto *c = response_obj->if_contains("choices")) {
+    choices = c->if_array();
+  }
+  if (!choices || choices->empty()) {
+    throw DF0_MAKE_ERROR("OpenRouter response contains no choices");
+  }
+  const boost::json::object *choice = (*choices)[0].if_object();
+  if (!choice) {
+    throw DF0_MAKE_ERROR("OpenRouter response has a malformed choice");
+  }
+  if (const auto *error = choice->if_contains("error");
+      error && !error->is_null()) {
+    throw DF0_MAKE_ERROR("OpenRouter choice returned an error",
+                         error_code(*error));
+  }
+
+  if (const auto *fr = choice->if_contains("finish_reason");
+      fr && fr->is_string()) {
+    const std::string reason{fr->as_string()};
+    if (reason == "length" && !allow_truncated)
+      throw DF0_MAKE_ERROR("OpenRouter output truncated", reason);
+    if (reason == "content_filter")
+      throw DF0_MAKE_ERROR("OpenRouter output blocked by content filter",
+                           reason);
+    if (reason == "error")
+      throw DF0_MAKE_ERROR("OpenRouter generation failed", reason);
+    if (reason == "tool_calls")
+      throw DF0_MAKE_ERROR("OpenRouter returned tool calls, which this "
+                           "element does not support",
+                           reason);
+  }
+
+  const boost::json::object *message = nullptr;
+  if (const auto *m = choice->if_contains("message"))
+    message = m->if_object();
+  if (!message)
+    throw DF0_MAKE_ERROR("OpenRouter choice has no message");
+
+  const auto *content = message->if_contains("content");
+  if (!content || !content->is_string())
+    throw DF0_MAKE_ERROR("OpenRouter message has no text content");
+
+  return std::string{content->as_string()};
 }
 
 } // anonymous namespace
