@@ -414,11 +414,11 @@ private:
 
     	const bool is_closing = match->kind == delimiter_kind::closing;
     	const bool is_new_part = match->kind == delimiter_kind::part;
-    	if (is_new_part)
+        if (is_new_part)
         {
-            boundary_state.is_open = true;
-            if (!match->via_alt)
+            if (!boundary_state.is_open && !match->via_alt)
                 boundary_state.alt_allowed = false;
+            boundary_state.is_open = true;
         }
 
     	if (is_closing && !boundary_state.is_open)
