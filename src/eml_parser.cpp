@@ -335,8 +335,24 @@ public:
 	}
 
 private:
+    struct boundary_state
+	{
+		std::string boundary;
+		std::string alt_boundary;
+		bool is_open;
+	};
+	std::vector<boundary_state> m_boundaries;
+	header_parser m_current_header_parser;
+	std::string m_current_header_accumulator;
+	bool m_in_headers = true;
+	audit::auditor_ref<auditor_type> m_auditor;
 	enum class delimiter_kind { none, part, closing };
-
+	struct delimiter_match
+    {
+    	size_t index;
+    	delimiter_kind kind;
+    	bool via_alt;
+    };
 	static delimiter_kind classify(const std::string& line, const std::string& boundary)
 	{
 		const std::string prefix = std::string(boundary_delimiter) + boundary;
@@ -347,67 +363,78 @@ private:
 		return delimiter_kind::none;
 	}
 
+	std::optional<delimiter_match> find_delimiter(const std::string& line) const
+    {
+    	for (size_t i = m_boundaries.size(); i > 0; --i)
+    	{
+    		const auto& state = m_boundaries[i - 1];
+    		if (state.boundary.empty())
+    			continue;
+    		if (const auto kind = classify(line, state.boundary); kind != delimiter_kind::none)
+    			return delimiter_match{i - 1, kind, false};
+    	}
+    	for (size_t i = m_boundaries.size(); i > 0; --i)
+    	{
+    		const auto& state = m_boundaries[i - 1];
+    		if (state.alt_boundary.empty())
+    			continue;
+    		if (const auto kind = classify(line, state.alt_boundary); kind != delimiter_kind::none)
+    			return delimiter_match{i - 1, kind, true};
+    	}
+    	return std::nullopt;
+    }
+
 	bool is_boundary_line(const std::string& line) const
 	{
 		return line.starts_with(boundary_delimiter);
 	}
 
 	bool handle_boundary_line(std::string& line, mailio::message& mime_entity)
-	{
-		for (size_t i = m_boundaries.size(); i > 0; --i)
-		{
-			const auto current_boundary_index = i - 1;
-			auto& boundary_state = m_boundaries[current_boundary_index];
-			const std::string boundary = boundary_state.boundary;
+    {
+    	const auto match = find_delimiter(line);
+    	if (!match)
+    		return false;
 
-			if (boundary.empty())
-				continue;
+    	const auto current_boundary_index = match->index;
+    	auto& boundary_state = m_boundaries[current_boundary_index];
+    	const std::string boundary = boundary_state.boundary;
 
-			auto kind = classify(line, boundary);
-			if (kind == delimiter_kind::none && !boundary_state.alt_boundary.empty())
-			{
-				kind = classify(line, boundary_state.alt_boundary);
-				if (kind != delimiter_kind::none)
-				{
-					audit::entry(m_auditor, [&]{
-						return
-							"message"_v = std::string{"Normalizing whitespace-stripped boundary delimiter"},
-							"boundary"_v = boundary;
-					});
-					line = std::string(boundary_delimiter) + boundary
-						+ (kind == delimiter_kind::closing ? std::string(boundary_delimiter) : std::string{});
-				}
-			}
+    	if (match->via_alt)
+    	{
+    		audit::entry(m_auditor, [&]{
+    			return
+    				"message"_v = std::string{"Normalizing whitespace-stripped boundary delimiter"},
+    				"boundary"_v = boundary;
+    		});
+    		line = std::string(boundary_delimiter) + boundary
+    			+ (match->kind == delimiter_kind::closing ?
+                    std::string(boundary_delimiter) : std::string{});
+    	}
 
-			const bool is_closing = kind == delimiter_kind::closing;
-			const bool is_new_part = kind == delimiter_kind::part;
-			if (is_new_part)
-				boundary_state.is_open = true;
+    	const bool is_closing = match->kind == delimiter_kind::closing;
+    	const bool is_new_part = match->kind == delimiter_kind::part;
+    	if (is_new_part)
+    		boundary_state.is_open = true;
 
-			if (is_closing || is_new_part)
-			{
-				if (is_closing && !boundary_state.is_open)
-				{
-					audit::entry(m_auditor, [&]{
-						return
-							"message"_v = std::string{"Injecting empty MIME part before premature closing boundary"},
-							"boundary"_v = boundary;
-					});
-					inject_empty_part(boundary, mime_entity);
-				}
-				inject_missing_closers(current_boundary_index, mime_entity);
-				m_boundaries.resize(is_closing ? current_boundary_index : current_boundary_index + 1);
-				m_in_headers = is_new_part;
-				if (is_new_part)
-				{
-					m_current_header_parser = header_parser{};
-					m_current_header_accumulator.clear();
-				}
-				return true;
-			}
-		}
-		return false;
-	}
+    	if (is_closing && !boundary_state.is_open)
+    	{
+    		audit::entry(m_auditor, [&]{
+    			return
+    				"message"_v = std::string{"Injecting empty MIME part before premature closing boundary"},
+    				"boundary"_v = boundary;
+    		});
+    		inject_empty_part(boundary, mime_entity);
+    	}
+    	inject_missing_closers(current_boundary_index, mime_entity);
+    	m_boundaries.resize(is_closing ? current_boundary_index : current_boundary_index + 1);
+    	m_in_headers = is_new_part;
+    	if (is_new_part)
+    	{
+    		m_current_header_parser = header_parser{};
+    		m_current_header_accumulator.clear();
+    	}
+    	return true;
+    }
 
 	void inject_empty_part(const std::string& boundary, mailio::message& mime_entity)
 	{
@@ -487,18 +514,6 @@ private:
 			m_current_header_accumulator.clear();
 		}
 	}
-
-	struct boundary_state
-	{
-		std::string boundary;
-		std::string alt_boundary;
-		bool is_open;
-	};
-	std::vector<boundary_state> m_boundaries;
-	header_parser m_current_header_parser;
-	std::string m_current_header_accumulator;
-	bool m_in_headers = true;
-	audit::auditor_ref<auditor_type> m_auditor;
 };
 
 template<typename auditor_type>
