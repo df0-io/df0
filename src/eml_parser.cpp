@@ -289,7 +289,7 @@ eml_parser<auditor_type>::eml_parser(audit::auditor_ref<auditor_type> auditor)
 
 namespace
 {
-
+constexpr std::size_t max_unfolded_header_size = 8 * 1024;
 constexpr std::string_view boundary_delimiter = "--";
 
 template<typename auditor_type>
@@ -466,16 +466,46 @@ private:
 	audit::auditor_ref<auditor_type> m_auditor;
 };
 
-bool has_unterminated_boundary_quote(const std::string& header)
+class quoted_boundary_scanner
 {
-	std::string header_copy = header;
-	std::transform(header_copy.begin(), header_copy.end(), header_copy.begin(),
-		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-	constexpr std::string_view key = "boundary=\"";
-	const auto pos = header_copy.rfind(key);
-	return pos != std::string::npos &&
-	    header_copy.find('"', pos + key.size()) == std::string::npos;
-}
+    public:
+    void feed(std::string_view chunk)
+	{
+		for (const char c : chunk)
+			consume(c);
+	}
+
+	bool open() const
+	{
+		return m_open;
+	}
+	private:
+	static constexpr std::string_view key = "boundary=\"";
+	void consume(char c)
+	{
+		if (m_open)
+		{
+			if (c == '"')
+				m_open = false;
+			return;
+		}
+		m_tail.push_back(c);
+		if (m_tail.size() > key.size())
+			m_tail.erase(0, 1);
+		if (m_tail.size() == key.size()
+			&& std::equal(key.begin(), key.end(), m_tail.begin(),
+				[](char a, char b) {
+				    return a == std::tolower(static_cast<unsigned char>(b));
+				}))
+		{
+			m_open = true;
+			m_tail.clear();
+		}
+	}
+
+	bool m_open = false;
+	std::string m_tail;
+};
 
 template<typename auditor_type>
 void rejoin_split_boundary(std::istream& stream, std::string& line,
@@ -489,25 +519,25 @@ void rejoin_split_boundary(std::istream& stream, std::string& line,
 	{
 		return;
 	}
-	while (stream.peek() == ' ' || stream.peek() == '\t')
+	quoted_boundary_scanner scanner;
+	scanner.feed(line);
+	while ((stream.peek() == ' ' || stream.peek() == '\t')
+	    && line.size() < max_unfolded_header_size)
 	{
-		std::string continuation;
-		if (!std::getline(stream, continuation))
-			break;
-		normalize_line(continuation, auditor);
-		if (has_unterminated_boundary_quote(line))
-		{
-			const auto first = continuation.find_first_not_of(" \t");
-			if (first != std::string::npos)
+	std::string continuation;
+			if (!std::getline(stream, continuation))
+				break;
+			normalize_line(continuation, auditor);
+			if (scanner.open())
 			{
-			    line += continuation.substr(first);
+				const auto first = continuation.find_first_not_of(" \t");
+				if (first == std::string::npos)
+					continue;
+				continuation.erase(0, first);
 			}
+			scanner.feed(continuation);
+			line += continuation;
 		}
-		else
-		{
-		    line += continuation;
-		}
-	}
 	audit::entry(auditor, [&]{ return "unfolded_content_type"_v = line; });
 }
 
