@@ -340,6 +340,7 @@ private:
 		std::string boundary;
 		std::string alt_boundary;
 		bool is_open;
+		bool alt_allowed = true;
 	};
 	std::vector<boundary_state> m_boundaries;
 	header_parser m_current_header_parser;
@@ -376,7 +377,7 @@ private:
     	for (size_t i = m_boundaries.size(); i > 0; --i)
     	{
     		const auto& state = m_boundaries[i - 1];
-    		if (state.alt_boundary.empty())
+    		if (state.alt_boundary.empty() || !state.alt_allowed)
     			continue;
     		if (const auto kind = classify(line, state.alt_boundary); kind != delimiter_kind::none)
     			return delimiter_match{i - 1, kind, true};
@@ -414,7 +415,11 @@ private:
     	const bool is_closing = match->kind == delimiter_kind::closing;
     	const bool is_new_part = match->kind == delimiter_kind::part;
     	if (is_new_part)
-    		boundary_state.is_open = true;
+        {
+            boundary_state.is_open = true;
+            if (!match->via_alt)
+                boundary_state.alt_allowed = false;
+        }
 
     	if (is_closing && !boundary_state.is_open)
     	{
