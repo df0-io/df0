@@ -13,6 +13,7 @@
 #include <stack>
 #include <string>
 #include <string_view>
+#include <vector>
 #include <istream>
 #include "eml_parser.h"
 
@@ -319,8 +320,7 @@ public:
 	explicit boundary_tracker(audit::auditor_ref<auditor_type> auditor)
 		: m_auditor{auditor}
 	{}
-
-	void process_line(const std::string& line, mailio::message& mime_entity)
+	void process_line(std::string& line, mailio::message& mime_entity)
 	{
 		if (is_boundary_line(line) && handle_boundary_line(line, mime_entity))
 			return;
@@ -335,37 +335,65 @@ public:
 	}
 
 private:
+	enum class delimiter_kind { none, part, closing };
+
+	static delimiter_kind classify(const std::string& line, const std::string& boundary)
+	{
+		const std::string prefix = std::string(boundary_delimiter) + boundary;
+		if (line == prefix)
+			return delimiter_kind::part;
+		if (line == prefix + std::string(boundary_delimiter))
+			return delimiter_kind::closing;
+		return delimiter_kind::none;
+	}
+
 	bool is_boundary_line(const std::string& line) const
 	{
 		return line.starts_with(boundary_delimiter);
 	}
 
-	bool handle_boundary_line(const std::string& line, mailio::message& mime_entity)
+	bool handle_boundary_line(std::string& line, mailio::message& mime_entity)
 	{
 		for (size_t i = m_boundaries.size(); i > 0; --i)
 		{
 			const auto current_boundary_index = i - 1;
 			auto& boundary_state = m_boundaries[current_boundary_index];
-			const std::string& boundary = boundary_state.boundary;
+			const std::string boundary = boundary_state.boundary;
 
 			if (boundary.empty())
 				continue;
 
-			const std::string boundary_prefix = std::string(boundary_delimiter) + boundary;
-			const bool is_closing = line == boundary_prefix + std::string(boundary_delimiter);
-			const bool is_new_part = !is_closing && (line == boundary_prefix);
+			auto kind = classify(line, boundary);
+			if (kind == delimiter_kind::none && !boundary_state.alt_boundary.empty())
+			{
+				kind = classify(line, boundary_state.alt_boundary);
+				if (kind != delimiter_kind::none)
+				{
+					audit::entry(m_auditor, [&]{
+						return
+							"message"_v = std::string{"Normalizing whitespace-stripped boundary delimiter"},
+							"boundary"_v = boundary;
+					});
+					line = std::string(boundary_delimiter) + boundary
+						+ (kind == delimiter_kind::closing ? std::string(boundary_delimiter) : std::string{});
+				}
+			}
+
+			const bool is_closing = kind == delimiter_kind::closing;
+			const bool is_new_part = kind == delimiter_kind::part;
 			if (is_new_part)
-			    boundary_state.is_open = true;
+				boundary_state.is_open = true;
 
 			if (is_closing || is_new_part)
 			{
-				if(is_closing && !boundary_state.is_open){
+				if (is_closing && !boundary_state.is_open)
+				{
 					audit::entry(m_auditor, [&]{
 						return
 							"message"_v = std::string{"Injecting empty MIME part before premature closing boundary"},
 							"boundary"_v = boundary;
 					});
-				    inject_empty_part(boundary, mime_entity);
+					inject_empty_part(boundary, mime_entity);
 				}
 				inject_missing_closers(current_boundary_index, mime_entity);
 				m_boundaries.resize(is_closing ? current_boundary_index : current_boundary_index + 1);
@@ -383,11 +411,11 @@ private:
 
 	void inject_empty_part(const std::string& boundary, mailio::message& mime_entity)
 	{
-	    const std::string boundary_line = std::string(boundary_delimiter) + boundary;
-	    mime_entity.parse_by_line(boundary_line);
-	    mime_entity.parse_by_line("Content-Type: text/plain");
-	    mime_entity.parse_by_line("");
-	    mime_entity.parse_by_line("");
+		const std::string boundary_line = std::string(boundary_delimiter) + boundary;
+		mime_entity.parse_by_line(boundary_line);
+		mime_entity.parse_by_line("Content-Type: text/plain");
+		mime_entity.parse_by_line("");
+		mime_entity.parse_by_line("");
 	}
 
 	void inject_missing_closers(size_t active_boundary_index, mailio::message& mime_entity)
@@ -412,11 +440,16 @@ private:
 			const auto& ct = m_current_header_parser.content_type();
 			if (ct.media_type() == mailio::mime::media_type_t::MULTIPART && !ct.boundary().empty())
 			{
+				std::string boundary = ct.boundary();
+				std::string alt = boundary;
+				alt.erase(std::remove_if(alt.begin(), alt.end(),
+					[](unsigned char c) { return c == ' ' || c == '\t'; }), alt.end());
 				m_boundaries.push_back(
 					boundary_state{
-			            .boundary = ct.boundary(),
-			            .is_open = false
-        			}
+						.boundary = std::move(boundary),
+						.alt_boundary = (alt == ct.boundary()) ? std::string{} : std::move(alt),
+						.is_open = false
+					}
 				);
 			}
 			m_current_header_parser = header_parser{};
@@ -454,9 +487,11 @@ private:
 			m_current_header_accumulator.clear();
 		}
 	}
+
 	struct boundary_state
 	{
 		std::string boundary;
+		std::string alt_boundary;
 		bool is_open;
 	};
 	std::vector<boundary_state> m_boundaries;
@@ -464,47 +499,6 @@ private:
 	std::string m_current_header_accumulator;
 	bool m_in_headers = true;
 	audit::auditor_ref<auditor_type> m_auditor;
-};
-
-class quoted_boundary_scanner
-{
-    public:
-    void feed(std::string_view chunk)
-	{
-		for (const char c : chunk)
-			consume(c);
-	}
-
-	bool open() const
-	{
-		return m_open;
-	}
-	private:
-	static constexpr std::string_view key = "boundary=\"";
-	void consume(char c)
-	{
-		if (m_open)
-		{
-			if (c == '"')
-				m_open = false;
-			return;
-		}
-		m_tail.push_back(c);
-		if (m_tail.size() > key.size())
-			m_tail.erase(0, 1);
-		if (m_tail.size() == key.size()
-			&& std::equal(key.begin(), key.end(), m_tail.begin(),
-				[](char a, char b) {
-				    return a == std::tolower(static_cast<unsigned char>(b));
-				}))
-		{
-			m_open = true;
-			m_tail.clear();
-		}
-	}
-
-	bool m_open = false;
-	std::string m_tail;
 };
 
 template<typename auditor_type>
@@ -515,29 +509,19 @@ void rejoin_split_boundary(std::istream& stream, std::string& line,
 	if (line.size() < content_type_prefix.size()
 	    || !std::equal(content_type_prefix.begin(), content_type_prefix.end(),
 			line.begin(), [](char a, char b)
-	        { return a == std::tolower(static_cast<unsigned char>(b));}))
+	        { return a == std::tolower(static_cast<unsigned char>(b)); }))
 	{
 		return;
 	}
-	quoted_boundary_scanner scanner;
-	scanner.feed(line);
 	while ((stream.peek() == ' ' || stream.peek() == '\t')
 	    && line.size() < max_unfolded_header_size)
 	{
-	std::string continuation;
-			if (!std::getline(stream, continuation))
-				break;
-			normalize_line(continuation, auditor);
-			if (scanner.open())
-			{
-				const auto first = continuation.find_first_not_of(" \t");
-				if (first == std::string::npos)
-					continue;
-				continuation.erase(0, first);
-			}
-			scanner.feed(continuation);
-			line += continuation;
-		}
+		std::string continuation;
+		if (!std::getline(stream, continuation))
+			break;
+		normalize_line(continuation, auditor);
+		line += continuation;
+	}
 	audit::entry(auditor, [&]{ return "unfolded_content_type"_v = line; });
 }
 
