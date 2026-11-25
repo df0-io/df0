@@ -494,7 +494,7 @@ Find phrases, objects and events in text or image using OpenRouter:
 std::filesystem::path("scene_1.png") | ... | openrouter::find("tree", ...) | out_stream;
 const std::string result = out_stream.str();
 ensure(std::stoul(result.substr(0, result.find('\n')))) == 2;
-ensure(fuzzy_match::ratio(result, "2\n- A tree is located on the left side ...")) > 50;
+ensure(fuzzy_match::ratio(result, "2\n- A tree is located on the left side of the image near the people.\n- Another tree is in the background near the center of the image.\n")) > 50;
 ```
 [Full example](https://docs.df0.io/en/latest/openrouter_find_image_8cpp-example.html)
 

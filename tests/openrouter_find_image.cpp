@@ -21,7 +21,7 @@ int main(int argc, char* argv[])
     std::filesystem::path("scene_1.png") | content_type::detector{} | openrouter::find("tree", environment::get("OPENROUTER_API_KEY").value()) | out_stream;
     const std::string result = out_stream.str();
     ensure(std::stoul(result.substr(0, result.find('\n')))) == 2;
-    ensure(fuzzy_match::ratio(result, "2\n- A tree is located on the left side ...")) > 50;
+    ensure(fuzzy_match::ratio(result, "2\n- A tree is located on the left side of the image near the people.\n- Another tree is in the background near the center of the image.\n")) > 50;
   }
   catch (const std::exception& e)
   {
