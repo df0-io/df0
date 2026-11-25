@@ -290,7 +290,7 @@ eml_parser<auditor_type>::eml_parser(audit::auditor_ref<auditor_type> auditor)
 
 namespace
 {
-constexpr std::size_t max_unfolded_header_size = 8 * 1024;
+constexpr std::size_t max_unfolded_header_size = 64 * 1024;
 constexpr std::string_view boundary_delimiter = "--";
 
 template<typename auditor_type>
@@ -523,7 +523,9 @@ private:
 
 template<typename auditor_type>
 void rejoin_split_boundary(std::istream& stream, std::string& line,
-    audit::auditor_ref<auditor_type> auditor)
+	std::size_t max_size,
+	const std::function<void(std::exception_ptr)>& non_fatal_error_handler,
+	audit::auditor_ref<auditor_type> auditor)
 {
 	constexpr std::string_view content_type_prefix = "content-type:";
 	if (line.size() < content_type_prefix.size()
@@ -533,14 +535,23 @@ void rejoin_split_boundary(std::istream& stream, std::string& line,
 	{
 		return;
 	}
-	while ((stream.peek() == ' ' || stream.peek() == '\t')
-	    && line.size() < max_unfolded_header_size)
+	bool truncated = false;
+	while (stream.peek() == ' ' || stream.peek() == '\t')
 	{
 		std::string continuation;
 		if (!std::getline(stream, continuation))
 			break;
 		normalize_line(continuation, auditor);
-		line += continuation;
+		if (!truncated && line.size() + continuation.size() <= max_size)
+			line += continuation;
+		else
+			truncated = true;
+	}
+	if (truncated)
+	{
+		audit::entry(auditor, [&]{ return "message"_v = std::string{"Content-Type header exceeds size limit, truncated"}; });
+		non_fatal_error_handler(std::make_exception_ptr(
+			make_error("Content-Type header exceeds size limit", std::to_string(max_size))));
 	}
 	audit::entry(auditor, [&]{ return "unfolded_content_type"_v = line; });
 }
@@ -563,7 +574,8 @@ mailio::message parse_message(
 		{
 			normalize_line(line, auditor);
 			if (tracker.in_headers())
-				rejoin_split_boundary(*stream, line, auditor);
+    			rejoin_split_boundary(*stream, line, max_unfolded_header_size,
+    					non_fatal_error_handler, auditor);
 			audit::entry(auditor, [&]{ return "line"_v = line; });
 			tracker.process_line(line, mime_entity);
 			mime_entity.parse_by_line(line);
