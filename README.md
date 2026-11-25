@@ -492,7 +492,9 @@ Find phrases, objects and events in text or image using OpenRouter:
 
 ```cpp
 std::filesystem::path("scene_1.png") | ... | openrouter::find("tree", ...) | out_stream;
-ensure(fuzzy_match::ratio(out_stream.str(), "2\n- A tree is located on the left side...")) > 50;
+const std::string result = out_stream.str();
+ensure(std::stoul(result.substr(0, result.find('\n')))) == 2;
+ensure(fuzzy_match::ratio(result, "2\n- A tree is located on the left side ...")) > 50;
 ```
 [Full example](https://docs.df0.io/en/latest/openrouter_find_image_8cpp-example.html)
 
@@ -1092,7 +1094,7 @@ Process data securely using offline AI models with the following options:
 
 - **&ndash;&ndash;ocr-confidence-threshold <value>**: Set the OCR confidence threshold (0-100). Words with confidence below this will be excluded. The CLI passes this value to the OCR parser when provided; if omitted, the parser’s own default behavior applies.
 
-- **&ndash;&ndash;local-processing <yes|no> (default: yes)**: Process documents locally, including local OCR. When set to `no`, local parsers are skipped; this is useful when combining DF-0 with OpenRouter processing for image/PDF data.
+- **&ndash;&ndash;local-processing &lt;yes|no&gt; (default: yes)**: Process documents locally, including OCR. When set to `no`, the CLI skips local parsers. Use this setting with OpenRouter chat-based options to process supported images directly: JPEG, PNG, GIF, and WebP. For PDF input with these options, keep local processing enabled because `openrouter::task` does not accept PDFs directly.
 
 - **&ndash;&ndash;use-stream <yes|no> (default: no)**: Pass the file stream to the SDK instead of the filename.
 
