@@ -375,28 +375,29 @@ private:
   		return delimiter_kind::none;
 	}
 
-	std::optional<delimiter_match> find_delimiter(const std::string& line) const
-    {
-    	for (size_t i = m_boundaries.size(); i > 0; --i)
+	std::optional<delimiter_match> find_by_spelling(const std::string& line, bool alt_allowed) const
+	{
+	    for (size_t i = m_boundaries.size(); i > 0; --i)
     	{
     		const auto& state = m_boundaries[i - 1];
-    		if (state.boundary.empty())
+            std::string boundary_candidate = alt_allowed? state.alt_boundary : state.boundary;
+    		if (boundary_candidate.empty())
     			continue;
-    		if (const auto kind = classify(line, state.boundary); kind != delimiter_kind::none)
-    			return delimiter_match{i - 1, kind, false};
-    	}
-    	for (size_t i = m_boundaries.size(); i > 0; --i)
-    	{
-    		const auto& state = m_boundaries[i - 1];
-    		if (state.alt_boundary.empty() || !state.alt_allowed)
-    			continue;
-    		const auto kind = classify(line, state.alt_boundary);
-            if (kind == delimiter_kind::none
-               	    || (kind == delimiter_kind::closing && !state.is_open))
-           	    continue;
+            const auto kind = classify(line, boundary_candidate);
+    		if(kind != delimiter_kind::none)
+                continue;
+            if(alt_allowed && (kind == delimiter_kind::closing && !state.is_open))
+                continue;
             return delimiter_match{i - 1, kind, true};
     	}
-    	return std::nullopt;
+		return std::nullopt;
+	}
+
+	std::optional<delimiter_match> find_delimiter(const std::string& line) const
+    {
+        if(const auto match = find_by_spelling(line, false))
+            return match;
+        return find_by_spelling(line, true);
     }
 
 	bool is_boundary_line(const std::string& line) const
