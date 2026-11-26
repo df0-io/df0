@@ -31,7 +31,7 @@ target_link_libraries(df0_tests PRIVATE
 	df0_audit
 	df0_core df0_office_formats df0_mail df0_ocr df0_archives
 	df0_fuzzy_match df0_base64 df0_content_type df0_http
-	df0_openai df0_xml
+	df0_openrouter df0_xml
 	GTest::gtest GTest::gmock Boost::json
 )
 
@@ -209,13 +209,13 @@ set(common_examples
     filter_emails_by_subject
     stream_to_html
     parse_archives
-    openai_classify
-    openai_translate
-    openai_sentiment
-    openai_voice_summary
-    openai_transcribe_summary
-    openai_find_image
-    openai_embedding
+    openrouter_classify
+    openrouter_translate
+    openrouter_sentiment
+    openrouter_transcribe
+    openrouter_text_to_speech
+    openrouter_find_image
+    openrouter_embedding
     reuse_chain
     join_transformers
     xml_parsing_example
@@ -254,20 +254,25 @@ foreach(example IN LISTS all_examples)
 	add_executable(${example} ${example}.cpp)
 	target_include_directories(${example} PUBLIC ../src)
 	target_link_libraries(${example} PRIVATE df0_core df0_office_formats df0_mail
-		df0_ocr df0_archives df0_ai df0_openai df0_fuzzy_match
+		df0_ocr df0_archives df0_ai df0_openrouter df0_fuzzy_match
 		df0_content_type df0_http)
 
 	if(TARGET df0_local_ai)
         target_link_libraries(${example} PRIVATE df0_local_ai)
     endif()
 
-	# Read the example file to check for OpenAI and local AI usage.
+	# Read the example file to check for local AI usage.
 	file(READ ${example}.cpp example_content)
-	string(FIND "${example_content}" "openai::" openai_pos)
-	string(FIND "${example_content}" "OPENAI_API_KEY" openai_key_pos)
+	string(FIND "${example_content}" "openrouter::" openrouter_pos)
+	string(FIND "${example_content}" "OPENROUTER_API_KEY" openrouter_key_pos)
 
-	# Conditionally add the test, skipping OpenAI examples if the key is not set.
-	if ((openai_pos EQUAL -1 AND openai_key_pos EQUAL -1) OR NOT "$ENV{OPENAI_API_KEY}" STREQUAL "")
+	set(openrouter_requirement_met FALSE)
+	if ((openrouter_pos EQUAL -1 AND openrouter_key_pos EQUAL -1) OR NOT "$ENV{OPENROUTER_API_KEY}" STREQUAL "")
+		set(openrouter_requirement_met TRUE)
+	endif()
+
+	# Conditionally add the test, skipping OpenRouter examples if the key is not set.
+	if (openrouter_requirement_met)
 		add_test(NAME ${example} COMMAND ${example})
 		if(WIN32)
 			set_property(TEST ${example} APPEND PROPERTY ENVIRONMENT "${df0_test_env_path}")
@@ -280,7 +285,9 @@ foreach(example IN LISTS all_examples)
 			set_property(TEST ${example} PROPERTY LABELS "is_example")
 		endif()
 	else()
-		message(STATUS "Skipping test for ${example} because it uses OpenAI and OPENAI_API_KEY is not set.")
+		if (NOT openrouter_requirement_met)
+			message(STATUS "Skipping test for ${example} because it uses OpenRouter and OPENROUTER_API_KEY is not set.")
+		endif()
 	endif()
 endforeach()
 
@@ -297,7 +304,7 @@ if(TARGET df0_ai_ct2)
 	    df0_content_type
 	    df0_ai
 	    df0_local_ai
-	    df0_openai
+	    df0_openrouter
 	    df0_fuzzy_match
 	    df0_http
     )
@@ -321,7 +328,7 @@ if(TARGET df0_ai_llama)
 	    df0_content_type
 	    df0_ai
 	    df0_local_ai
-	    df0_openai
+	    df0_openrouter
 	    df0_fuzzy_match
 	    df0_http
     )

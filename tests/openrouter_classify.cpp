@@ -8,15 +8,18 @@
 /**************************************************************************/
 
 #include "df0.hpp"
+#include <iostream>
 #include <sstream>
 
 int main(int argc, char* argv[])
 {
   using namespace df0;
+  std::stringstream out_stream;
 
   try
   {
-    std::filesystem::path("1.doc") | content_type::detector{} | office_formats_parser{} | plain_text_exporter() | openai::detect_sentiment(environment::get("OPENAI_API_KEY").value()) | std::cout;
+    std::filesystem::path("document_processing_market_trends.odt") | content_type::detector{} | office_formats_parser{} | plain_text_exporter() | openrouter::classify({ "agreement", "invoice", "report", "legal", "other"}, environment::get("OPENROUTER_API_KEY").value()) | out_stream;
+    ensure(out_stream.str()) == "report\n";
   }
   catch (const std::exception& e)
   {

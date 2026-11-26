@@ -7,25 +7,18 @@
 /*                                                                        */
 /**************************************************************************/
 
-#include "df0.hpp"
-#include <iostream>
-#include <sstream>
+#ifndef DF0_AUDIT_SENSITIVE_TAG_H
+#define DF0_AUDIT_SENSITIVE_TAG_H
 
-int main(int argc, char* argv[])
+#include <string_view>
+
+namespace df0::audit
 {
-  using namespace df0;
-  std::stringstream out_stream;
+struct sensitive
+{
+    static constexpr std::string_view string() { return "sensitive"; }
+};
 
-  try
-  {
-    std::filesystem::path("document_processing_market_trends.odt") | content_type::detector{} | office_formats_parser{} | plain_text_exporter() | openai::classify({ "agreement", "invoice", "report", "legal", "other"}, environment::get("OPENAI_API_KEY").value()) | out_stream;
-    ensure(out_stream.str()) == "report\n";
-  }
-  catch (const std::exception& e)
-  {
-    std::cerr << errors::diagnostic_message(e) << std::endl;
-    return 1;
-  }
+} // namespace df0::audit
 
-  return 0;
-}
+#endif
