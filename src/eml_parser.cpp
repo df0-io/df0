@@ -463,6 +463,12 @@ private:
 		}
 	}
 
+	std::string remove_whitespace(std::string input){
+	    input.erase(std::remove_if(input.begin(), input.end(),
+					[](unsigned char c) { return c == ' ' || c == '\t'; }), input.end());
+		return input;
+	}
+
 	void handle_header_line(const std::string& line)
 	{
 		if (line.empty())
@@ -473,13 +479,13 @@ private:
 			if (ct.media_type() == mailio::mime::media_type_t::MULTIPART && !ct.boundary().empty())
 			{
 				std::string boundary = ct.boundary();
-				std::string alt = boundary;
-				alt.erase(std::remove_if(alt.begin(), alt.end(),
-					[](unsigned char c) { return c == ' ' || c == '\t'; }), alt.end());
+				std::string alt = remove_whitespace(boundary);
+				if (alt == boundary)
+				    alt.clear();
 				m_boundaries.push_back(
 					boundary_state{
 						.boundary = std::move(boundary),
-						.alt_boundary = (alt == ct.boundary()) ? std::string{} : std::move(alt),
+						.alt_boundary = std::move(alt),
 						.is_open = false
 					}
 				);
@@ -521,9 +527,13 @@ private:
 	}
 };
 
+bool is_whitespace(int input_stream)
+{
+    return (input_stream == ' ' || input_stream == '\t');
+}
+
 template<typename auditor_type>
 void rejoin_split_boundary(std::istream& stream, std::string& line,
-	std::size_t max_size,
 	const std::function<void(std::exception_ptr)>& non_fatal_error_handler,
 	audit::auditor_ref<auditor_type> auditor)
 {
@@ -536,13 +546,13 @@ void rejoin_split_boundary(std::istream& stream, std::string& line,
 		return;
 	}
 	bool truncated = false;
-	while (stream.peek() == ' ' || stream.peek() == '\t')
+	while (is_whitespace(stream.peek()))
 	{
 		std::string continuation;
 		if (!std::getline(stream, continuation))
 			break;
 		normalize_line(continuation, auditor);
-		if (!truncated && line.size() + continuation.size() <= max_size)
+		if (!truncated && line.size() + continuation.size() <= max_unfolded_header_size)
 			line += continuation;
 		else
 			truncated = true;
@@ -551,7 +561,7 @@ void rejoin_split_boundary(std::istream& stream, std::string& line,
 	{
 		audit::entry(auditor, [&]{ return "message"_v = std::string{"Content-Type header exceeds size limit, truncated"}; });
 		non_fatal_error_handler(std::make_exception_ptr(
-			make_error("Content-Type header exceeds size limit", std::to_string(max_size))));
+			make_error("Content-Type header exceeds size limit", std::to_string(max_unfolded_header_size))));
 	}
 	audit::entry(auditor, [&]{ return "unfolded_content_type"_v = line; });
 }
@@ -574,7 +584,7 @@ mailio::message parse_message(
 		{
 			normalize_line(line, auditor);
 			if (tracker.in_headers())
-    			rejoin_split_boundary(*stream, line, max_unfolded_header_size,
+    			rejoin_split_boundary(*stream, line,
     					non_fatal_error_handler, auditor);
 			audit::entry(auditor, [&]{ return "line"_v = line; });
 			tracker.process_line(line, mime_entity);
