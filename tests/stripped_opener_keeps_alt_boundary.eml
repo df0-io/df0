@@ -1,0 +1,17 @@
+From: sender@example.com
+To: receiver@example.com
+Subject: Stripped Opener Keeps Alt
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+ boundary="abc
+ def"
+
+--abcdef
+Content-Type: text/plain; charset="utf-8"
+
+Part one.
+--abc def
+Content-Type: text/plain; charset="utf-8"
+
+Part two.
+--abcdef--

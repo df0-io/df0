@@ -1,0 +1,15 @@
+From: sender@example.com
+To: receiver@example.com
+Subject: Exact Opener Disables Alt
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+ boundary="abc
+ def"
+
+--abc def
+Content-Type: text/plain; charset="utf-8"
+
+Before.
+--abcdef--
+After.
+--abc def--

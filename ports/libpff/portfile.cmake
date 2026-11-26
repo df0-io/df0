@@ -52,7 +52,7 @@ if (VCPKG_TARGET_IS_WINDOWS)
 		vcpkg_replace_string(${file} [[..\..\..\zlib]] [[..\..\zlib-1.3.2]])
 	endforeach()
 	vcpkg_download_distfile(ZLIB_ARCHIVE
-		URLS "https://zlib.net/zlib132.zip"
+		URLS "https://github.com/madler/zlib/releases/download/v1.3.2/zlib132.zip"
 		FILENAME "zlib132.zip"
 		SHA512 3d673df9aa2085d0349b673f25bacfa79807232f6059970a8b7f81110233bc33076f224237e208a8f176bdebd977f5361de03edf35125e01bbb55552e92d53aa
 	)
