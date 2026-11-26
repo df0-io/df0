@@ -1,0 +1,13 @@
+From: sender@example.com
+To: receiver@example.com
+Subject: Single Line Boundary With Space
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="abc def"
+
+--abcdef
+--abcdef--
+--abc def
+Content-Type: text/plain; charset="utf-8"
+
+Real part.
+--abc def--

@@ -292,9 +292,9 @@ namespace
 {
 constexpr std::size_t max_unfolded_header_size = 64 * 1024;
 constexpr std::string_view boundary_delimiter = "--";
-bool is_whitespace(int input_stream)
+bool is_whitespace(int input_char)
 {
-    return (input_stream == ' ' || input_stream == '\t');
+    return (input_char == ' ' || input_char == '\t');
 }
 
 template<typename auditor_type>
@@ -324,13 +324,16 @@ public:
 	explicit boundary_tracker(audit::auditor_ref<auditor_type> auditor)
 		: m_auditor{auditor}
 	{}
-	void process_line(std::string& line, mailio::message& mime_entity)
+	void process_line(std::string& line, mailio::message& mime_entity, bool folded = false)
 	{
 		if (is_boundary_line(line) && handle_boundary_line(line, mime_entity))
 			return;
 
 		if (m_in_headers)
+		{
+		    m_header_folded |= folded;
 			handle_header_line(line);
+		}
 	}
 
 	bool in_headers() const
@@ -350,6 +353,7 @@ private:
 	header_parser m_current_header_parser;
 	std::string m_current_header_accumulator;
 	bool m_in_headers = true;
+	bool m_header_folded = false;
 	audit::auditor_ref<auditor_type> m_auditor;
 	enum class delimiter_kind { none, part, closing };
 	struct delimiter_match
@@ -454,6 +458,7 @@ private:
     	{
     		m_current_header_parser = header_parser{};
     		m_current_header_accumulator.clear();
+            m_header_folded = false;
     	}
     	return true;
     }
@@ -480,7 +485,7 @@ private:
 		}
 	}
 
-	std::string remove_whitespace(std::string input){
+	static std::string remove_whitespace_tab(std::string input){
 	    input.erase(std::remove_if(input.begin(), input.end(),
 					[](unsigned char c) { return c == ' ' || c == '\t'; }), input.end());
 		return input;
@@ -496,9 +501,13 @@ private:
 			if (ct.media_type() == mailio::mime::media_type_t::MULTIPART && !ct.boundary().empty())
 			{
 				std::string boundary = ct.boundary();
-				std::string alt = remove_whitespace(boundary);
-				if (alt == boundary)
-				    alt.clear();
+				std::string alt;
+                if (m_header_folded)
+                {
+   					alt = remove_whitespace_tab(boundary);
+   					if (alt == boundary)
+  						alt.clear();
+                }
 				m_boundaries.push_back(
 					boundary_state{
 						.boundary = std::move(boundary),
@@ -509,6 +518,7 @@ private:
 			}
 			m_current_header_parser = header_parser{};
 			m_current_header_accumulator.clear();
+			m_header_folded = false;
 		}
 		else if (std::isspace(static_cast<unsigned char>(line[0])))
 		{
@@ -545,7 +555,7 @@ private:
 };
 
 template<typename auditor_type>
-void rejoin_split_boundary(std::istream& stream, std::string& line,
+bool rejoin_split_boundary(std::istream& stream, std::string& line,
 	const std::function<void(std::exception_ptr)>& non_fatal_error_handler,
 	audit::auditor_ref<auditor_type> auditor)
 {
@@ -555,14 +565,16 @@ void rejoin_split_boundary(std::istream& stream, std::string& line,
 			line.begin(), [](char a, char b)
 	        { return a == std::tolower(static_cast<unsigned char>(b)); }))
 	{
-		return;
+		return false;
 	}
+	bool folded = false;
 	bool truncated = false;
 	while (is_whitespace(stream.peek()))
 	{
 		std::string continuation;
 		if (!std::getline(stream, continuation))
 			break;
+		folded = true;
 		normalize_line(continuation, auditor);
 		if (!truncated && line.size() + continuation.size() <= max_unfolded_header_size)
 			line += continuation;
@@ -576,6 +588,7 @@ void rejoin_split_boundary(std::istream& stream, std::string& line,
 			make_error("Content-Type header exceeds size limit", std::to_string(max_unfolded_header_size))));
 	}
 	audit::entry(auditor, [&]{ return "unfolded_content_type"_v = line; });
+	return folded;
 }
 
 template<typename auditor_type>
@@ -595,11 +608,12 @@ mailio::message parse_message(
 		while (std::getline(*stream, line))
 		{
 			normalize_line(line, auditor);
+			bool folded = false;
 			if (tracker.in_headers())
-    			rejoin_split_boundary(*stream, line,
+    			folded = rejoin_split_boundary(*stream, line,
     					non_fatal_error_handler, auditor);
 			audit::entry(auditor, [&]{ return "line"_v = line; });
-			tracker.process_line(line, mime_entity);
+			tracker.process_line(line, mime_entity, folded);
 			mime_entity.parse_by_line(line);
 		}
 		mime_entity.parse_by_line("\r\n");

@@ -72,7 +72,7 @@ std::vector<std::string> get_misc_test_files_list() {
         "html_priority.eml", "empty_html_fallback.eml", "nested_html.eml",
         "alternative_plain_only.eml", "boundary_with_dashes.eml",
         "unclosed_inner_boundary.eml", "nested_deep_unclosed.eml",
-        "header_folded_boundary.eml", "header_folded_boundary_space.eml",
+        "header_folded_boundary.eml", "header_folded_boundary_space.eml", "single_line_boundary_preamble.eml",
         "header_folded_boundary_tab.eml", "exact_opener_disables_alt_boundary.eml", "stripped_opener_keeps_alt_boundary.eml",
         "unnamed_attachment.eml", "multipart_related_html.eml", "html_attachment_alternative.eml",
         "endboundary_first.eml", "missing_inner_closing_boundary.eml",
