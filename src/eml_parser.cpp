@@ -379,8 +379,11 @@ private:
     		const auto& state = m_boundaries[i - 1];
     		if (state.alt_boundary.empty() || !state.alt_allowed)
     			continue;
-    		if (const auto kind = classify(line, state.alt_boundary); kind != delimiter_kind::none)
-    			return delimiter_match{i - 1, kind, true};
+    		const auto kind = classify(line, state.alt_boundary);
+            if (kind == delimiter_kind::none
+               	    || (kind == delimiter_kind::closing && !state.is_open))
+           	    continue;
+            return delimiter_match{i - 1, kind, true};
     	}
     	return std::nullopt;
     }
