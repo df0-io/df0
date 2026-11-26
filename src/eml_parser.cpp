@@ -292,6 +292,10 @@ namespace
 {
 constexpr std::size_t max_unfolded_header_size = 64 * 1024;
 constexpr std::string_view boundary_delimiter = "--";
+bool is_whitespace(int input_stream)
+{
+    return (input_stream == ' ' || input_stream == '\t');
+}
 
 template<typename auditor_type>
 void normalize_line(std::string& line, audit::auditor_ref<auditor_type> auditor)
@@ -354,14 +358,21 @@ private:
     	delimiter_kind kind;
     	bool via_alt;
     };
-	static delimiter_kind classify(const std::string& line, const std::string& boundary)
+	static delimiter_kind classify(std::string_view line, std::string_view boundary)
 	{
-		const std::string prefix = std::string(boundary_delimiter) + boundary;
-		if (line == prefix)
-			return delimiter_kind::part;
-		if (line == prefix + std::string(boundary_delimiter))
-			return delimiter_kind::closing;
-		return delimiter_kind::none;
+    	while (!line.empty() && is_whitespace(static_cast<unsigned char>(line.back())))
+            line.remove_suffix(1);
+  		if (!line.starts_with(boundary_delimiter))
+            return delimiter_kind::none;
+  		line.remove_prefix(boundary_delimiter.size());
+  		if (!line.starts_with(boundary))
+            return delimiter_kind::none;
+  		line.remove_prefix(boundary.size());
+  		if (line.empty())
+            return delimiter_kind::part;
+  		if (line == boundary_delimiter)
+            return delimiter_kind::closing;
+  		return delimiter_kind::none;
 	}
 
 	std::optional<delimiter_match> find_delimiter(const std::string& line) const
@@ -403,18 +414,18 @@ private:
     	auto& boundary_state = m_boundaries[current_boundary_index];
     	const std::string boundary = boundary_state.boundary;
 
-    	if (match->via_alt)
-    	{
-    		audit::entry(m_auditor, [&]{
-    			return
-    				"message"_v = std::string{"Normalizing whitespace-stripped boundary delimiter"},
-    				"boundary"_v = boundary;
-    		});
-    		line = std::string(boundary_delimiter) + boundary
-    			+ (match->kind == delimiter_kind::closing ?
-                    std::string(boundary_delimiter) : std::string{});
-    	}
-
+        std::string canonical = std::string(boundary_delimiter) + boundary
+       	    + (match->kind == delimiter_kind::closing ?
+                std::string(boundary_delimiter) : std::string{});
+        if (canonical != line)
+        {
+           	audit::entry(m_auditor, [&]{
+          		return
+         			"message"_v = std::string{"Normalizing boundary delimiter"},
+         			"boundary"_v = boundary;
+           	});
+           	line = std::move(canonical);
+        }
     	const bool is_closing = match->kind == delimiter_kind::closing;
     	const bool is_new_part = match->kind == delimiter_kind::part;
         if (is_new_part)
@@ -529,11 +540,6 @@ private:
 		}
 	}
 };
-
-bool is_whitespace(int input_stream)
-{
-    return (input_stream == ' ' || input_stream == '\t');
-}
 
 template<typename auditor_type>
 void rejoin_split_boundary(std::istream& stream, std::string& line,
