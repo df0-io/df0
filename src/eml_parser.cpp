@@ -382,7 +382,7 @@ private:
     		const auto& state = m_boundaries[i - 1];
             if (via_alt && !state.alt_allowed)
                 continue;
-            std::string boundary_candidate = via_alt? state.alt_boundary : state.boundary;
+            const std::string& boundary_candidate = via_alt? state.alt_boundary : state.boundary;
     		if (boundary_candidate.empty())
     			continue;
             const auto kind = classify(line, boundary_candidate);
