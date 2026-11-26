@@ -375,20 +375,22 @@ private:
   		return delimiter_kind::none;
 	}
 
-	std::optional<delimiter_match> find_by_spelling(const std::string& line, bool alt_allowed) const
+	std::optional<delimiter_match> find_by_spelling(const std::string& line, bool via_alt) const
 	{
 	    for (size_t i = m_boundaries.size(); i > 0; --i)
     	{
     		const auto& state = m_boundaries[i - 1];
-            std::string boundary_candidate = alt_allowed? state.alt_boundary : state.boundary;
+            if (via_alt && !state.alt_allowed)
+                continue;
+            std::string boundary_candidate = via_alt? state.alt_boundary : state.boundary;
     		if (boundary_candidate.empty())
     			continue;
             const auto kind = classify(line, boundary_candidate);
-    		if(kind != delimiter_kind::none)
+    		if(kind == delimiter_kind::none)
                 continue;
-            if(alt_allowed && (kind == delimiter_kind::closing && !state.is_open))
+            if(via_alt && (kind == delimiter_kind::closing && !state.is_open))
                 continue;
-            return delimiter_match{i - 1, kind, true};
+            return delimiter_match{i - 1, kind, via_alt};
     	}
 		return std::nullopt;
 	}
